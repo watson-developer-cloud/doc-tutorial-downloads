@@ -1,14 +1,18 @@
-# visual-recognition-tutorial
-These are the example files for the IBM Watson Visual Recognition Service [tutorials](http://www.ibm.com/watson/developercloud/doc/visual-recognition/tutorials.shtml) documentation page. 
+# doc-tutorial-downloads
+These are the example files for the IBM Watson Service tutorials:
 
-To begin working with the Watson Visual Recognition Service files, follow these steps:
+To begin working with the Watson services, see their tutorial pages:
 
-1. Get credentials for the service from [Bluemix](https://console.ng.bluemix.net/catalog/services/visual-recognition/), and download cURL.
-2. Use the default classifier to classify the sample file `fruitbowl.jpg`.
-3. Try out detecting faces using the sample file `prez.jpg`.
-4. Detect text in an image using the sample file `sign.jpg`.
-5. Create your own custom classifier by using the sample compressed folders`husky.zip`, `golden-retriever.zip`, `beagle.zip`, and `cats.zip`.
-6. Retrain the classifier that you created in step 5 by using the sample compressed folders `dalmatian.zip`, and `more-cats.zip`.
-7. Test out the classifier you created by using the sample file `dog.jpg`.
-
-For more information about any of these steps, check out the full [Visual Recognition tutorial](http://www.ibm.com/watson/developercloud/doc/visual-recognition/tutorials.shtml) in the documentation.
+- [AlchemyLanguage](http://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.shtml)
+- [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/convo_getstart.shtml)
+- [Dialog](http://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.shtml)
+- [Document Conversion](http://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.shtml)
+- [Language Translator](http://www.ibm.com/watson/developercloud/doc/language-translation/customizing.shtml)
+- [Natural Language Classifier](http://www.ibm.com/watson/developercloud/doc/nl-classifier/get_start.shtml)
+- [Personality Insights](http://www.ibm.com/watson/developercloud/doc/personality-insights/basics.shtml)
+- [Retrieve and Rank](http://www.ibm.com/watson/developercloud/doc/retrieve-rank/get_start.shtml)
+- [Speech to Text](http://www.ibm.com/watson/developercloud/doc/speech-to-text/tutorial.shtml)
+- [Text to Speech](http://www.ibm.com/watson/developercloud/doc/text-to-speech/tutorial.shtml)
+- [Tone Analyzer](http://www.ibm.com/watson/developercloud/doc/tone-analyzer/tutorial.shtml)
+- [Tradeoff Analytics](http://www.ibm.com/watson/developercloud/doc/tradeoff-analytics/basics.shtml)
+- [Visual Recognition](http://www.ibm.com/watson/developercloud/doc/visual-recognition/tutorials.shtml)
