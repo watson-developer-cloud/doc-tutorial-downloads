@@ -57,7 +57,7 @@ if r.status_code != 201:
    sys.exit(-1)
 
 ##########################################################################
-# Step 3: Get status of corpus file just added.
+# Step 3: Get status of corpus file just added
 # After corpus is uploaded, there is some analysis done to extract OOVs.
 # One cannot upload a new corpus or words while this analysis is on-going so
 # we need to loop until the status becomes 'analyzed' for this corpus.
