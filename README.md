@@ -7,6 +7,7 @@ To begin working with the Watson services, see their tutorial pages:
 - [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/convo_getstart.shtml)
 - [Dialog](http://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.shtml)
 - [Document Conversion](http://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.shtml)
+- [Knowledge Studio](http://www.ibm.com/watson/developercloud/doc/wks/wks_tutorials.shtml)
 - [Language Translator](http://www.ibm.com/watson/developercloud/doc/language-translation/customizing.shtml)
 - [Natural Language Classifier](http://www.ibm.com/watson/developercloud/doc/nl-classifier/get_start.shtml)
 - [Personality Insights](http://www.ibm.com/watson/developercloud/doc/personality-insights/basics.shtml)
