@@ -19,7 +19,7 @@ uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations"
 # http://www.ibm.com/smarterplanet/us/en/ibmwatson/developercloud/doc/getting_started/gs-credentials.shtml#getCreds
 ##########################################################################
 username = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-password = "zzzzzzzzzzzz"
+password = "ZZZZZZZZZZZZ"
 headers = {'Content-Type' : "application/json"}
 
 ##########################################################################
@@ -28,8 +28,8 @@ headers = {'Content-Type' : "application/json"}
 jsonObject = json.dumps(data).encode('utf-8')
 resp = requests.post(uri, auth=(username,password), verify=False, headers=headers, data=jsonObject)
 print "Model creation returns: ", resp.status_code
-if resp.status_code == 401:
-   print "Failed to create model due to authentication failure"
+if resp.status_code != 201:
+   print "Failed to create model"
    print resp.text
    sys.exit(-1)
 
@@ -48,13 +48,16 @@ uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations/"+
 # 'corpus.txt' is name of local file containing the corpus to be uploaded
 # >>>> REPLACE THE FILE BELOW WITH YOUR OWN CORPUS FILE
 with open('corpus.txt', 'rb') as f:
-    r = requests.post(uri, auth=(username,password), verify=False, headers=headers, data=f)
+   r = requests.post(uri, auth=(username,password), verify=False, headers=headers, data=f)
 
 print "\nAdding corpus file returns: ", r.status_code
-# print r.text
+if r.status_code != 201:
+   print "Failed to add corpus file"
+   print r.text
+   sys.exit(-1)
 
 ##########################################################################
-# Step 3: Get status of corpus file just added.
+# Step 3: Get status of corpus file just added
 # After corpus is uploaded, there is some analysis done to extract OOVs.
 # One cannot upload a new corpus or words while this analysis is on-going so
 # we need to loop until the status becomes 'analyzed' for this corpus.
