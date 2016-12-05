@@ -4,7 +4,7 @@ These are the example files for the IBM Watson Service tutorials:
 To begin working with the Watson services, see their tutorial pages:
 
 - [AlchemyLanguage](http://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.shtml)
-- [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/convo_getstart.shtml)
+- [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/tutorial.html)
 - [Dialog](http://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.shtml)
 - [Document Conversion](http://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.shtml)
 - [Knowledge Studio](http://www.ibm.com/watson/developercloud/doc/wks/wks_tutorials.shtml)
