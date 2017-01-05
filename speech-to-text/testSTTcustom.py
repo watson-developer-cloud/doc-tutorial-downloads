@@ -92,7 +92,7 @@ r = requests.get(uri, auth=(username,password), verify=False, headers=headers)
 print "Listing words returns: ", r.status_code
 file=codecs.open(customID+".OOVs.corpus", 'wb', 'utf-8')
 file.write(r.text)
-print "Words list from added corpus saved in file: "+customID+".OOVs.from-corpus"
+print "Words list from added corpus saved in file: "+customID+".OOVs.corpus"
 
 ##########################################################################
 # Step 4: Add a single user word
@@ -183,7 +183,7 @@ while (status != 'available'):
 print "Training complete!"
 
 print "\nGetting custom models..."
-uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations/"
+uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations"
 r = requests.get(uri, auth=(username,password), verify=False, headers=headers)
 
 print "Get models returns: ", r.status_code
@@ -203,7 +203,7 @@ respJson = r.json()
 print "Model deletion returns: ", resp.status_code
 
 print "\nGetting custom models..."
-uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations/"
+uri = "https://stream.watsonplatform.net/speech-to-text/api/v1/customizations"
 r = requests.get(uri, auth=(username,password), verify=False, headers=headers)
 print "Get models returns: ", r.status_code
 print r.text
