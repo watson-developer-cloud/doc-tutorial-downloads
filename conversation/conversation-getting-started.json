@@ -1,0 +1,128 @@
+{
+  "name": "Conversation example",
+  "created": "2017-01-12T21:17:10.576Z",
+  "intents": [{
+    "intent": "goodbye",
+    "created": "2017-01-12T21:17:10.576Z",
+    "updated": "2017-01-12T21:17:10.576Z",
+    "examples": [{
+      "text": "bye",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "farewell",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "goodbye",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "I'm done",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "see you later",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }],
+    "description": null
+  }, {
+    "intent": "hello",
+    "created": "2017-01-12T21:17:10.576Z",
+    "updated": "2017-01-12T21:17:10.576Z",
+    "examples": [{
+      "text": "good morning",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "greetings",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "hello",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "hi",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }, {
+      "text": "howdy",
+      "created": "2017-01-12T21:17:10.576Z",
+      "updated": "2017-01-12T21:17:10.576Z"
+    }],
+    "description": null
+  }],
+  "updated": "2017-01-12T21:20:20.104Z",
+  "entities": [],
+  "language": "en",
+  "metadata": null,
+  "description": null,
+  "dialog_nodes": [{
+    "go_to": null,
+    "output": null,
+    "parent": null,
+    "context": null,
+    "created": "2017-01-12T21:19:01.408Z",
+    "updated": "2017-01-12T21:19:01.408Z",
+    "metadata": null,
+    "conditions": "anything_else",
+    "description": null,
+    "dialog_node": "node_19_1484255941242",
+    "previous_sibling": "node_21_1484256000763"
+  }, {
+    "go_to": null,
+    "output": {
+      "text": {
+        "values": ["Good day to you."],
+        "selection_policy": "sequential"
+      }
+    },
+    "parent": null,
+    "context": null,
+    "created": "2017-01-12T21:19:43.431Z",
+    "updated": "2017-01-12T21:20:00.769Z",
+    "metadata": null,
+    "conditions": "#hello",
+    "description": null,
+    "dialog_node": "node_20_1484255983104",
+    "previous_sibling": "node_18_1484255929781"
+  }, {
+    "go_to": null,
+    "output": {
+      "text": {
+        "values": ["OK! See you later."],
+        "selection_policy": "sequential"
+      }
+    },
+    "parent": null,
+    "context": null,
+    "created": "2017-01-12T21:20:00.996Z",
+    "updated": "2017-01-12T21:20:20.104Z",
+    "metadata": null,
+    "conditions": "#goodbye",
+    "description": null,
+    "dialog_node": "node_21_1484256000763",
+    "previous_sibling": "node_20_1484255983104"
+  }, {
+    "go_to": null,
+    "output": {
+      "text": {
+        "values": ["Welcome to the Conversation example!"],
+        "selection_policy": "sequential"
+      }
+    },
+    "parent": null,
+    "context": null,
+    "created": "2017-01-12T21:18:49.982Z",
+    "updated": "2017-01-12T21:19:12.906Z",
+    "metadata": null,
+    "conditions": "conversation_start",
+    "description": null,
+    "dialog_node": "node_18_1484255929781",
+    "previous_sibling": null
+  }],
+  "workspace_id": "52b07b4b-d480-4907-a93f-de203a935062",
+  "counterexamples": []
+}

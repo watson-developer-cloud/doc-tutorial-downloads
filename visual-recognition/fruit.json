@@ -1,0 +1,10 @@
+{  
+   "parameters":{
+      "classifier_ids":[  
+         "apple",
+         "banana"
+      ],
+      "owner":"IBM",
+      "threshold":".5"
+   }
+}
