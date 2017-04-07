@@ -10,7 +10,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 ##########################################################################
 # Add Bluemix credentials here
 # See following instructions for getting your own credentials:
-# http://www.ibm.com/smarterplanet/us/en/ibmwatson/developercloud/doc/getting_started/gs-credentials.shtml#getCreds
+# https://www.ibm.com/watson/developercloud/doc/common/getting-started-credentials.html
 ##########################################################################
 username = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 password = "ZZZZZZZZZZZZ"
