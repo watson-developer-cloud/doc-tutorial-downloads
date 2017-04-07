@@ -1,19 +1,20 @@
 # doc-tutorial-downloads
-These are the example files for the IBM Watson Service tutorials:
+These are the example files for the IBM Watson&trade; service tutorials:
 
-To begin working with the Watson services, see their tutorial pages:
+To begin working with the  services, see their tutorial pages:
 
-- [AlchemyLanguage](http://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.shtml)
+- [AlchemyLanguage](https://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.html)
 - [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/tutorial.html)
-- [Dialog](http://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.shtml)
-- [Document Conversion](http://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.shtml)
+- [Dialog](https://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.html)
+- [Document Conversion](https://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.html)
 - [Knowledge Studio](http://www.ibm.com/watson/developercloud/doc/wks/wks_tutorials.shtml)
-- [Language Translator](http://www.ibm.com/watson/developercloud/doc/language-translation/customizing.shtml)
+- [Language Translator](https://www.ibm.com/watson/developercloud/doc/language-translator/customizing.html)
 - [Natural Language Classifier](http://www.ibm.com/watson/developercloud/doc/natural-language-classifier/getting-started.html)
-- [Personality Insights](http://www.ibm.com/watson/developercloud/doc/personality-insights/basics.shtml)
-- [Retrieve and Rank](http://www.ibm.com/watson/developercloud/doc/retrieve-rank/get_start.shtml)
-- [Speech to Text](http://www.ibm.com/watson/developercloud/doc/speech-to-text/tutorial.shtml)
-- [Text to Speech](http://www.ibm.com/watson/developercloud/doc/text-to-speech/tutorial.shtml)
-- [Tone Analyzer](http://www.ibm.com/watson/developercloud/doc/tone-analyzer/tutorial.shtml)
-- [Tradeoff Analytics](http://www.ibm.com/watson/developercloud/doc/tradeoff-analytics/basics.shtml)
-- [Visual Recognition](http://www.ibm.com/watson/developercloud/doc/visual-recognition/tutorials.shtml)
+- [Personality Insights](https://www.ibm.com/watson/developercloud/doc/personality-insights/basics.html)
+- [Retrieve and Rank](https://www.ibm.com/watson/developercloud/doc/retrieve-rank/tutorial.html)
+- [Speech to Text](https://www.ibm.com/watson/developercloud/doc/speech-to-text/tutorial.html)
+- [Text to Speech](https://www.ibm.com/watson/developercloud/doc/text-to-speech/tutorial.html)
+- [Tone Analyzer](https://www.ibm.com/watson/developercloud/doc/tone-analyzer/getting-started.html)
+- [Tradeoff Analytics](https://www.ibm.com/watson/developercloud/doc/tradeoff-analytics/basics.html)
+- [Virtual Agent](https://www.ibm.com/watson/developercloud/doc/virtual-agent/wva_tutless_intro.html)
+- [Visual Recognition](https://www.ibm.com/watson/developercloud/doc/visual-recognition/getting-started.html)
