@@ -1,0 +1,20 @@
+{
+  "utterances": [
+    {
+      "text": "Hello, can you help me?",
+      "user": "customer"
+    },
+    {
+      "text": "Sure. How are you?",
+      "user": "agent"
+    },
+    {
+      "text": "Nothing is working :(",
+      "user": "customer"
+    },
+    {
+      "text": "Sorry to hear that.",
+      "user": "agent"
+    }
+  ]
+}
