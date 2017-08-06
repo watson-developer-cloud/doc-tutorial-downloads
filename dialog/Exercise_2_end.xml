@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dialog xsi:noNamespaceSchemaLocation="WatsonDialogDocument_1.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <flow>
+        <folder label="Main">
+            <output>
+                <prompt selectionType="RANDOM">
+                    <item>Hello, welcome to Mike’s Pizza</item>
+                </prompt>
+                <goto ref="getUserInput_2449614"/>
+            </output>
+            <getUserInput id="getUserInput_2449614">
+                <search ref="folder_2449611"/>
+                <default>
+                    <output>
+                        <prompt selectionType="RANDOM">
+                            <item>I am sorry, I did not understand your question. Please try asking another one.</item>
+                        </prompt>
+                    </output>
+                </default>
+            </getUserInput>
+        </folder>
+        <folder label="Library">
+            <folder label="Live Content" id="folder_2449611">
+                <input>
+                    <grammar>
+                        <item>What type of toppings do you have?</item>
+                        <item>$ What type of toppings do you have?</item>
+                        <item>$ list of toppings</item>
+                        <item>What * toppings * have</item>
+                        <item>$ list toppings * available</item>
+                        <item>$ what toppings do you have</item>
+                    </grammar>
+                    <output>
+                        <prompt selectionType="RANDOM">
+                            <item>We have Pepperoni, Mushrooms, and Sausage</item>
+                        </prompt>
+                    </output>
+                </input>
+                <input>
+                    <grammar>
+                        <item>What do you sell?</item>
+                    </grammar>
+                    <output>
+                        <prompt selectionType="RANDOM">
+                            <item>Are you looking for appetizers, entrees, or drinks?</item>
+                        </prompt>
+                        <input>
+                            <grammar>
+                                <item>drinks</item>
+                                <item>beverages</item>
+                                <item>liquid</item>
+                                <item>libation</item>
+                            </grammar>
+                            <output>
+                                <prompt selectionType="RANDOM">
+                                    <item>We have&lt;br/&gt;
+Coke,
+Sprite,
+Sunkist,
+Root Beer,
+Ginger Ale,
+Fresca,
+Mello Yello,
+Grape,
+Dr Pepper,
+Monster,
+Moxie Energy,
+and Bottled Spring water
+</item>
+                                </prompt>
+                            </output>
+                        </input>
+                        <input>
+                            <grammar>
+                                <item>entrees</item>
+                                <item>meals</item>
+                                <item>main course</item>
+                                <item>food</item>
+                            </grammar>
+                            <output>
+                                <prompt selectionType="RANDOM">
+                                    <item>We have Chicken Parm,
+Chicken Cutlet and Marinara Sauce,
+Veal Parm,
+Eggplant Parm,
+Eggplant and Marinara Sauce,
+Meatball, Marinara Sauce and Meatball,
+Chicken &amp; Broccoli,
+Chicken Kabob, Alfredo Sauce and Broccoli,
+Steak &amp; Broccoli, and
+Alfredo Sauce and Broccoli.
+</item>
+                                </prompt>
+                            </output>
+                        </input>
+                        <input>
+                            <grammar>
+                                <item>appetizers</item>
+                                <item>snacks</item>
+                                <item>finger food</item>
+                                <item>appertif</item>
+                            </grammar>
+                            <output>
+                                <prompt selectionType="RANDOM">
+                                    <item>Chose from Fried Calamari, Mozarella Sticks, Stuffed potato skins, Jalepeno Poppers or Stuffed Mushrooms</item>
+                                </prompt>
+                            </output>
+                        </input>
+                    </output>
+                </input>
+                <input>
+                    <grammar>
+                        <item>What type of pizza do you sell?</item>
+                    </grammar>
+                </input>
+            </folder>
+            <folder label="Storage"/>
+        </folder>
+        <folder label="Global"/>
+        <folder label="Concepts">
+            <concept>
+                <grammar>
+                    <item>pizza</item>
+                    <item>pie</item>
+                    <item>za</item>
+                    <item>pizza pie</item>
+                    <item>slice</item>
+                </grammar>
+            </concept>
+        </folder>
+    </flow>
+    <constants>
+        <var_folder name="Home"/>
+    </constants>
+    <variables>
+        <var_folder name="Home"/>
+    </variables>
+    <settings>
+        <setting name="USERIDNUM" type="USER">69745</setting>
+        <setting name="EMAIL" type="USER">mwacho@us.ibm.com</setting>
+        <setting name="PASSWORD" type="USER">mct:6c43efcf28ac1250c656a15e26b28e0</setting>
+        <setting name="FIRSTNAME" type="USER">Matt</setting>
+        <setting name="LASTNAME" type="USER">Wachowiak</setting>
+        <setting name="COUNTRY" type="USER">US</setting>
+        <setting name="STATE" type="USER"></setting>
+        <setting name="CITY" type="USER">New York</setting>
+        <setting name="BDAY" type="USER">1</setting>
+        <setting name="BMONTH" type="USER">1</setting>
+        <setting name="BYEAR" type="USER">2001</setting>
+        <setting name="SEX" type="USER">Male</setting>
+        <setting name="DISPLAYNAME" type="USER">Matthew</setting>
+        <setting name="PROVIDESECURITYPASSWORD" type="USER">false</setting>
+        <setting name="SECURITYPASSWORD" type="USER"></setting>
+        <setting name="SHOWPERSPROFILE" type="USER">false</setting>
+        <setting name="USETYPE" type="USER">0</setting>
+        <setting name="DATEJOINED" type="USER">2014-10-06 15:34:05.0</setting>
+        <setting name="LASTLOGIN" type="USER">2015-04-01 17:31:28.0</setting>
+        <setting name="LOGINCOUNT" type="USER">7</setting>
+        <setting name="CREDIT" type="USER">-100</setting>
+        <setting name="CONVCOUNT" type="USER">55</setting>
+        <setting name="PERSONALITYTYPEID" type="USER">6</setting>
+        <setting name="SHOWSENDMESSAGE" type="USER">true</setting>
+        <setting name="ACTIVATED" type="USER">true</setting>
+        <setting name="MESSENGEREMAIL" type="USER"></setting>
+        <setting name="MESSENGERPASSWORD" type="USER"></setting>
+        <setting name="SENDCHATEMAIL" type="USER">true</setting>
+        <setting name="SENDFAVEMAIL" type="USER">true</setting>
+        <setting name="CACHE" type="USER">false</setting>
+        <setting name="CLASSTYPE" type="USER">3</setting>
+        <setting name="AUTOLEARN" type="USER">false</setting>
+        <setting name="LANGUAGE" type="USER">EN</setting>
+        <setting name="RESPONSETIME" type="USER">0</setting>
+        <setting name="MAXAUTOLEARNITEMS" type="USER">0</setting>
+        <setting name="NUMAUTOSETRELATED" type="USER">0</setting>
+        <setting name="TIMEZONEID" type="USER">Australia/Sydney</setting>
+        <setting name="AUTOSETRELATEDNODEID" type="USER">0</setting>
+        <setting name="RETURNTOCHATNODEID" type="USER">0</setting>
+        <setting name="INPUTMASKTYPE" type="USER">0</setting>
+        <setting name="NUMLOGINATTEMPTS" type="USER">0</setting>
+        <setting name="CONCEPTMATCHING" type="USER">0</setting>
+    </settings>
+</dialog>
