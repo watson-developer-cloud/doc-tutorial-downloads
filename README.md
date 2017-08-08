@@ -5,7 +5,6 @@ To begin working with the  services, see their tutorial pages:
 
 - [AlchemyLanguage](https://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.html)
 - [Conversation](https://console.bluemix.net/docs/services/conversation/getting-started.html)
-- [Dialog](https://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.html)
 - [Document Conversion](https://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.html)
 - [Knowledge Studio](https://www.ibm.com/watson/developercloud/doc/wks/tutorials.html)
 - [Language Translator](https://console.bluemix.net/docs/services/language-translator/getting-started.html)
