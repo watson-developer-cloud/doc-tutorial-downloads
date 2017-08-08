@@ -4,8 +4,7 @@ These are the example files for the IBM Watson&trade; service tutorials:
 To begin working with the  services, see their tutorial pages:
 
 - [AlchemyLanguage](https://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.html)
-- [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/tutorial.html)
-- [Dialog](https://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.html)
+- [Conversation](https://console.bluemix.net/docs/services/conversation/tutorial.html#tutorial)
 - [Document Conversion](https://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.html)
 - [Knowledge Studio](http://www.ibm.com/watson/developercloud/doc/wks/wks_tutorials.shtml)
 - [Language Translator](https://www.ibm.com/watson/developercloud/doc/language-translator/customizing.html)
