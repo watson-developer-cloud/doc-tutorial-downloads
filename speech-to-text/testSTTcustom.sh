@@ -10,7 +10,7 @@
 #
 # Specify your Bluemix service credentials for USERNAME and PASSWORD.
 # See the following instructions for getting your own credentials:
-# https://www.ibm.com/watson/developercloud/doc/common/getting-started-credentials.html
+# https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
 #
 
 USERNAME="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
