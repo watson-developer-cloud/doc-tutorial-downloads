@@ -31,7 +31,7 @@ print("Collection is %s" % (args.collection))
 VERBOSE_CURL = '-v' if args.v else ''
 
 #constants used for URLs
-VERSION = '2017-09-01'
+VERSION = '2017-11-07'
 BASE_URL = "https://gateway.watsonplatform.net/discovery/api"
 TRAINING_URL = BASE_URL + '/v1/environments/%s/collections/%s/training_data?version=%s' % (args.environment, args.collection, VERSION)
 
