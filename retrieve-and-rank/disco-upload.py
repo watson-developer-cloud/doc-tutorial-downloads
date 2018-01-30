@@ -26,7 +26,7 @@ args = parser.parse_args()
 
 VERBOSE_CURL = '-v' if args.v else ''
 
-VERSION = '2017-09-01'
+VERSION = '2017-11-07'
 COLLECTION_URL = 'https://gateway.watsonplatform.net/discovery/api/v1/environments/%s/collections/%s/documents' % (args.environment, args.collection)
 
 args = parser.parse_args()
