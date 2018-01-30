@@ -8,9 +8,9 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 ##########################################################################
-# Add Bluemix credentials here
+# Add IBM Cloud credentials here
 # See following instructions for getting your own credentials:
-# http://www.ibm.com/smarterplanet/us/en/ibmwatson/developercloud/doc/getting_started/gs-credentials.shtml#getCreds
+# https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
 ##########################################################################
 username = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 password = "ZZZZZZZZZZZZ"

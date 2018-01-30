@@ -8,9 +8,9 @@
 ##########################################################################
 
 #
-# Specify your Bluemix service credentials for USERNAME and PASSWORD.
+# Specify your IBM Cloud service credentials for USERNAME and PASSWORD.
 # See the following instructions for getting your own credentials:
-# http://www.ibm.com/smarterplanet/us/en/ibmwatson/developercloud/doc/getting_started/gs-credentials.shtml#getCreds
+# https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
 #
 
 USERNAME="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
