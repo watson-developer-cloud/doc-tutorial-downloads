@@ -1,0 +1,150 @@
+{
+  "name": "Knowledge Graph Configuration",
+  "description": "Default configuration, updated for use with Knowledge Graph",
+  "conversions": {
+    "word": {
+      "heading": {
+        "fonts": [
+          {
+            "level": 1,
+            "min_size": 24,
+            "bold": false,
+            "italic": false
+          },
+          {
+            "level": 2,
+            "min_size": 18,
+            "max_size": 23,
+            "bold": true,
+            "italic": false
+          },
+          {
+            "level": 3,
+            "min_size": 14,
+            "max_size": 17,
+            "bold": false,
+            "italic": false
+          },
+          {
+            "level": 4,
+            "min_size": 13,
+            "max_size": 13,
+            "bold": true,
+            "italic": false
+          }
+        ],
+        "styles": [
+          {
+            "level": 1,
+            "names": [
+              "pullout heading",
+              "pulloutheading",
+              "header"
+            ]
+          },
+          {
+            "level": 2,
+            "names": [
+              "subtitle"
+            ]
+          }
+        ]
+      }
+    },
+    "pdf": {
+      "heading": {
+        "fonts": [
+          {
+            "level": 1,
+            "min_size": 24,
+            "max_size": 80
+          },
+          {
+            "level": 2,
+            "min_size": 18,
+            "max_size": 24,
+            "bold": false,
+            "italic": false
+          },
+          {
+            "level": 2,
+            "min_size": 18,
+            "max_size": 24,
+            "bold": true
+          },
+          {
+            "level": 3,
+            "min_size": 13,
+            "max_size": 18,
+            "bold": false,
+            "italic": false
+          },
+          {
+            "level": 3,
+            "min_size": 13,
+            "max_size": 18,
+            "bold": true
+          },
+          {
+            "level": 4,
+            "min_size": 11,
+            "max_size": 13,
+            "bold": false,
+            "italic": false
+          }
+        ]
+      }
+    },
+    "html": {
+      "exclude_tags_completely": [
+        "script",
+        "sup"
+      ],
+      "exclude_tags_keep_content": [
+        "font",
+        "em",
+        "span"
+      ],
+      "exclude_content": {
+        "xpaths": []
+      },
+      "keep_content": {
+        "xpaths": []
+      },
+      "exclude_tag_attributes": [
+        "EVENT_ACTIONS"
+      ]
+    },
+    "json_normalizations": []
+  },
+  "enrichments": [
+    {
+      "source_field": "text",
+      "destination_field": "enriched_text",
+      "enrichment": "natural_language_understanding",
+      "options": {
+        "features": {
+          "entities": {
+            "sentiment": true,
+            "emotion": false,
+            "mentions": true,
+            "mention_types": true,
+            "sentence_locations": true,
+            "model": "en-news"
+          },
+          "relations": {
+            "model": "en-news"
+          },
+          "sentiment": {
+            "document": true
+          },
+          "categories": {},
+          "concepts": {
+            "limit": 8
+          }
+        }
+      }
+    }
+  ],
+  "normalizations": []
+}

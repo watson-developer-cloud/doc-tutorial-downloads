@@ -1,19 +1,17 @@
 # doc-tutorial-downloads
-These are the example files for the IBM Watson Service tutorials:
+These are the example files for the IBM Watson&trade; service tutorials:
 
-To begin working with the Watson services, see their tutorial pages:
+To begin working with the services, see their tutorial pages:
 
-- [AlchemyLanguage](http://www.ibm.com/watson/developercloud/doc/alchemylanguage/tutorials.shtml)
-- [Conversation](http://www.ibm.com/watson/developercloud/doc/conversation/tutorial.html)
-- [Dialog](http://www.ibm.com/watson/developercloud/doc/dialog/tutorial_tutorials.shtml)
-- [Document Conversion](http://www.ibm.com/watson/developercloud/doc/document-conversion/tutorial.shtml)
-- [Knowledge Studio](http://www.ibm.com/watson/developercloud/doc/wks/wks_tutorials.shtml)
-- [Language Translator](http://www.ibm.com/watson/developercloud/doc/language-translation/customizing.shtml)
-- [Natural Language Classifier](http://www.ibm.com/watson/developercloud/doc/natural-language-classifier/getting-started.html)
-- [Personality Insights](http://www.ibm.com/watson/developercloud/doc/personality-insights/basics.shtml)
-- [Retrieve and Rank](http://www.ibm.com/watson/developercloud/doc/retrieve-rank/get_start.shtml)
-- [Speech to Text](http://www.ibm.com/watson/developercloud/doc/speech-to-text/tutorial.shtml)
-- [Text to Speech](http://www.ibm.com/watson/developercloud/doc/text-to-speech/tutorial.shtml)
-- [Tone Analyzer](http://www.ibm.com/watson/developercloud/doc/tone-analyzer/tutorial.shtml)
-- [Tradeoff Analytics](http://www.ibm.com/watson/developercloud/doc/tradeoff-analytics/basics.shtml)
-- [Visual Recognition](http://www.ibm.com/watson/developercloud/doc/visual-recognition/tutorials.shtml)
+- [Conversation](https://console.bluemix.net/docs/services/conversation/getting-started.html)
+- [Discovery](https://console.bluemix.net/docs/services/discovery/getting-started.html)
+- [Knowledge Studio](https://console.bluemix.net/docs/services/watson-knowledge-studio/tutorials-create-project.html)
+- [Language Translator](https://console.bluemix.net/docs/services/language-translator/getting-started.html)
+- [Natural Language Classifier](https://console.bluemix.net/docs/services/natural-language-classifier/getting-started.html)
+- [Natural Language Understanding](https://console.bluemix.net/docs/services/natural-language-understanding/getting-started.html)
+- [Personality Insights](https://console.bluemix.net/docs/services/personality-insights/getting-started.html)
+- [Speech to Text](https://console.bluemix.net/docs/services/speech-to-text/getting-started.html)
+- [Text to Speech](https://console.bluemix.net/docs/services/text-to-speech/getting-started.html)
+- [Tone Analyzer](https://console.bluemix.net/docs/services/tone-analyzer/getting-started.html)
+- [Virtual Agent](https://console.bluemix.net/docs/services/virtual-agent/getting-started.html)
+- [Visual Recognition](https://console.bluemix.net/docs/services/visual-recognition/getting-started.html)
