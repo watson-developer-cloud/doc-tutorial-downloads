@@ -1,0 +1,173 @@
+{
+  "name": "assistant-simple-example",
+  "intents": [
+    {
+      "intent": "time",
+      "examples": [
+        {
+          "text": "What time of day is it"
+        },
+        {
+          "text": "What time is it?"
+        },
+        {
+          "text": "What is the current time?"
+        },
+        {
+          "text": "Tell me the hour of the day."
+        },
+        {
+          "text": "Is it late?"
+        },
+        {
+          "text": "Give me the time."
+        }
+      ]
+    },
+    {
+      "intent": "goodbye",
+      "examples": [
+        {
+          "text": "Farewell"
+        },
+        {
+          "text": "Goodbye"
+        },
+        {
+          "text": "I am leaving."
+        },
+        {
+          "text": "I'm leaving"
+        },
+        {
+          "text": "Sayonara"
+        },
+        {
+          "text": "See you later"
+        },
+        {
+          "text": "Bye"
+        }
+      ]
+    },
+    {
+      "intent": "hello",
+      "examples": [
+        {
+          "text": "I have arrived"
+        },
+        {
+          "text": "I am here"
+        },
+        {
+          "text": "howdy"
+        },
+        {
+          "text": "hi"
+        },
+        {
+          "text": "hello"
+        },
+        {
+          "text": "greetings"
+        },
+        {
+          "text": "good morning"
+        }
+      ]
+    }
+  ],
+  "entities": [],
+  "language": "en",
+  "metadata": {
+    "api_version": {
+      "major_version": "v1",
+      "minor_version": "2018-07-10"
+    }
+  },
+  "description": "A simple Assistant workspace that can detect three intents: #hello, #time, and #goodbye.",
+  "dialog_nodes": [
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "Good day to you."
+          ],
+          "selection_policy": "sequential"
+        }
+      },
+      "metadata": {},
+      "conditions": "#hello",
+      "dialog_node": "node_1_1479323581900",
+      "previous_sibling": "node_1_1480350999019"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [],
+          "selection_policy": "sequential"
+        }
+      },
+      "actions": [
+        {
+          "name": "display_time",
+          "type": "client",
+          "result_variable": "null"
+        }
+      ],
+      "metadata": {},
+      "conditions": "#time",
+      "dialog_node": "node_1_1479840416664",
+      "previous_sibling": "node_1_1479487905980"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "Sorry, I have no idea what you're talking about."
+          ]
+        }
+      },
+      "metadata": {},
+      "conditions": "anything_else",
+      "dialog_node": "node_2_1479323591143",
+      "previous_sibling": "node_1_1479840416664"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "OK! See you later."
+          ],
+          "selection_policy": "sequential"
+        }
+      },
+      "actions": [
+        {
+          "name": "end_conversation",
+          "type": "client",
+          "result_variable": "null"
+        }
+      ],
+      "metadata": {},
+      "conditions": "#goodbye",
+      "dialog_node": "node_1_1479487905980",
+      "previous_sibling": "node_1_1479323581900"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": "Welcome to the Watson Assistant example!"
+      },
+      "metadata": {},
+      "conditions": "conversation_start",
+      "dialog_node": "node_1_1480350999019"
+    }
+  ],
+  "counterexamples": [],
+  "learning_opt_out": false
+}
