@@ -2,23 +2,42 @@
 
 ##########################################################################
 # Prerequisites: Add service credentials and set variables
-# You must have cURL installed to execute this scrpt. See the following
-# link to download the version of cURL for your operating system:
-# https://curl.haxx.se/
+# You must have curl installed to execute this scrpt. See the following
+# link to download the version of curl for your operating system:
+#   https://curl.haxx.se/
 ##########################################################################
 
 #
-# Specify your IBM Cloud service credentials for USERNAME and PASSWORD.
+# Specify your IBM Cloud service credentials for USERNAME and PASSWORD:
+#
+# o If you use IAM service credentials, leave USERNAME set to "apikey"
+#   and set PASSWORD to the value of your IAM API key.
+# o If you use pre-IAM service credentials, set the values to your USERNAME
+#   and PASSWORD.
+#
 # See the following instructions for getting your own credentials:
-# https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
+#   https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
 #
 
-USERNAME="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-PASSWORD="ZZZZZZZZZZZZ"
+USERNAME="apikey"
+PASSWORD="iam_apikey"
+
+#
+# Set URL to the URL for the region in which you created your service
+# instance. Change the variable to one of the following values if you do
+# not use the default US South data center:
+#
+# US South:  "https://stream.watsonplatform.net/speech-to-text/api/v1"
+# US East:   "https://gateway-wdc.watsonplatform.net/speech-to-text/api/v1"
+# Germany:   "https://stream-fra.watsonplatform.net/speech-to-text/api/v1"
+# Sydney:    "https://gateway-syd.watsonplatform.net/speech-to-text/api/v1"
+#
+
+URL="https://stream.watsonplatform.net/speech-to-text/api/v1"
 
 #
 # Set INSECURE to "-k" to use insecure SSL connections that bypass the use
-# of SSL certificates if you encounter certificate problems when using cURL.
+# of SSL certificates if you encounter certificate problems when using curl.
 # Set the variable to "" to use secure SSL connections.
 #
 
@@ -27,9 +46,9 @@ INSECURE="-k"
 #
 # Set the following variables to use your own corpus file and name in Step 2:
 #
-# CORPUS_FILE defines the name of a corpus text file to be added to the
-#    custom model.
-# CORPUS_NAME is the name of the new corpus that is added to the model.
+# o CORPUS_FILE defines the name of a corpus text file to be added to the
+#   custom model.
+# o CORPUS_NAME is the name of the new corpus that is added to the model.
 #
 
 CORPUS_FILE="corpus.txt"
@@ -39,7 +58,6 @@ CORPUS_NAME="corpus1"
 # Leave the following variables unchanged.
 #
 
-URL="https://stream.watsonplatform.net/speech-to-text/api/v1"
 TEMPFILE="testSTTcustom.tmp"
 RESPCODE=""
 RESPJSON=""
