@@ -8,12 +8,16 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 ##########################################################################
-# Add IBM Cloud credentials here
-# See following instructions for getting your own credentials:
-# https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
+# Add your IBM Cloud credentials here
+# o If you use IAM service credentials, leave USERNAME set to "apikey"
+#   and set PASSWORD to the value of your IAM API key.
+# o If you use pre-IAM service credentials, set the values to your USERNAME
+#   and PASSWORD.
+# See the following instructions for getting your own credentials:
+#   https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
 ##########################################################################
-username = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-password = "ZZZZZZZZZZZZ"
+username = "apikey"
+password = "iam_apikey"
 headers = {'Content-Type' : "application/json"}
 
 ##########################################################################
