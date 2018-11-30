@@ -7,14 +7,12 @@
         "automobile",
         "sedan",
         "suv",
-        "sport utility vehicle",
-        "motor vehicle"
+        "vehicle"
       ]
     },
     {
       "input_terms": [
-        "weekday",
-        "week day"
+        "weekday"
       ],
       "expanded_terms": [
         "monday",
@@ -26,8 +24,7 @@
     },
     {
       "input_terms": [
-        "weekend",
-        "week end"
+        "weekend"
       ],
       "expanded_terms": [
         "saturday",
