@@ -1,0 +1,127 @@
+<grammar version="1.0" xml:lang="en-US" root="root">
+
+  <rule id="root">
+    <item>
+      <ruleref uri="#wmihonda" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum_modelyear" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+      <ruleref uri="#alphanum" />
+    </item>
+  </rule>
+  <rule id="wmihonda">
+    <item>
+      <one-of>
+        <item>
+          <one-of>
+            <item> one </item>
+            <item> two </item>
+            <item> three </item>
+          </one-of>
+          <item> H. <ruleref uri="#alphanum"/> </item>
+        </item>
+        <item> one nine <ruleref uri="#alphanum"/> </item>
+        <item> three C. Z. </item>
+        <item> four S. six </item>
+        <item> five F. N. </item>
+        <item> five J. six </item>
+        <item> nine three H. </item>
+        <item> J. H. <ruleref uri="#alphanum"/> </item>
+        <item> L. U. C. </item>
+        <item> M. A. seven </item>
+        <item> M. A. K. </item>
+        <item> M. H. R. </item>
+        <item> M. L. H. </item>
+        <item> M. R. H. </item>
+        <item> N. L. A. </item>
+        <item> S. H.
+          <one-of>
+            <item> H. </item>
+            <item> S. </item>
+          </one-of>
+        </item>
+        <item> </item>
+      </one-of>
+    </item>
+  </rule>
+
+  <rule id="alphanum">
+    <one-of>
+      <item> <ruleref uri="#digit" /> </item>
+      <item> <ruleref uri="#spelling_wo_ioq" /> </item>
+    </one-of>
+  </rule>
+
+  <rule id="alphanum_modelyear">
+    <one-of>
+      <item> <ruleref uri="#digit_wo_zero" /> </item>
+      <item> <ruleref uri="#spelling_wo_ioquz" /> </item>
+    </one-of>
+  </rule>
+
+  <rule id="digit_wo_zero">
+    <one-of>
+      <item> one </item>
+      <item> two </item>
+      <item> three </item>
+      <item> four </item>
+      <item> five </item>
+      <item> six </item>
+      <item> seven </item>
+      <item> eight </item>
+      <item> nine </item>
+    </one-of>
+  </rule>
+  <rule id="digit">
+    <one-of>
+      <item> zero </item>
+      <item> oh </item>
+      <item> <ruleref uri="#digit_wo_zero" /> </item>
+    </one-of>
+  </rule>
+
+  <rule id="spelling_wo_ioquz">
+    <one-of>
+      <item> A. </item>
+      <item> B. </item>
+      <item> C. </item>
+      <item> D. </item>
+      <item> E. </item>
+      <item> F. </item>
+      <item> G. </item>
+      <item> H. </item>
+      <item> J. </item>
+      <item> K. </item>
+      <item> L. </item>
+      <item> M. </item>
+      <item> N. </item>
+      <item> P. </item>
+      <item> R. </item>
+      <item> S. </item>
+      <item> T. </item>
+      <item> V. </item>
+      <item> W. </item>
+      <item> X. </item>
+      <item> Y. </item>
+    </one-of>
+  </rule>
+
+  <rule id="spelling_wo_ioq">
+    <one-of>
+      <item> U. </item>
+      <item> Z. </item>
+      <item> <ruleref uri="#spelling_wo_ioquz" /> </item>
+    </one-of>
+  </rule>
+
+</grammar>

@@ -1,0 +1,8 @@
+#ABNF 1.0 ISO-8859-1;
+language en-US;
+mode voice;
+root $ALL;
+
+$ALL = $dig<1-> ;
+
+$dig = one | two | three | four | five | six | seven | eight | nine | zero | oh ;

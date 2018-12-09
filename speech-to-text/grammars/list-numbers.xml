@@ -1,0 +1,17 @@
+<grammar version="1.0" xml:lang="en-US" root="digits">
+  <rule id="digits">
+    <one-of>
+      <item> one </item>
+      <item> two </item>
+      <item> three </item>
+      <item> four </item>
+      <item> five </item>
+      <item> six </item>
+      <item> seven </item>
+      <item> eight </item>
+      <item> nine </item>
+      <item> zero </item>
+      <item> oh </item>
+    </one-of>
+  </rule>
+</grammar>
