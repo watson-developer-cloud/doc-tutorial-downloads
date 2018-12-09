@@ -1,0 +1,22 @@
+#ABNF 1.0 ISO-8859-1;
+language en-US;
+mode voice;
+root $root;
+
+$root = $wmi-honda $alphanum $alphanum $alphanum $alphanum $alphanum $alphanum
+$alphanum_modelyear $alphanum $alphanum $alphanum $alphanum $alphanum $alphanum $alphanum ;
+
+//1H | 2H | 3H | 4S6 | 5FN | 5J6 | 93H | JH | LUC | MA7 | MAK | MHR | MLH | MRH | NLA | SHH |
+SHS | 19* | 3CZ
+$wmi-honda = (one|two|three) H. $alphanum | one nine $alphanum | three C. Z. | four S. six |
+five F. N. | five J. six | nine three H. | J. H. $alphanum | L. U. C. | M. A. seven |
+M. A. K. | M. H. R. | M. L. H. | M. R. H. | N. L. A. | S. H. (H.|S.) ;
+
+$alphanum = $digit | $spelling_wo_ioq ;
+$alphanum_modelyear = $digit_wo_zero | $spelling_wo_ioquz ;
+$digit_wo_zero = one | two | three | four | five | six | seven | eight | nine ;
+$digit = zero | oh | $digit_wo_zero ;
+
+$spelling_wo_ioquz = A. | B. | C. | D. | E. | F. | G. | H. | J. | K. | L. | M. |
+N. | P. | R. | S. | T. | V. | W. | X. | Y. ;
+$spelling_wo_ioq = $spelling_wo_ioquz | U. | Z. ;

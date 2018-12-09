@@ -1,0 +1,11 @@
+#ABNF 1.0 ISO-8859-1;
+language en-US;
+mode voice;
+root $root;
+
+$root = [$optionalphrase] $digit $digit $digit $digit $digit $digit $digit $digit $digit
+$digit $digit $digit ;
+
+$optionalphrase = my social security number is | my social security is | my number is |
+my social is ;
+$digit = one | two | three | four | five | six | seven | eight | nine | zero | oh ;

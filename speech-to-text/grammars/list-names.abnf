@@ -1,0 +1,17 @@
+#ABNF 1.0 ISO-8859-1;
+language en-US;
+mode voice;
+root $names;
+
+$names = Raoul Vasquez
+| R R Smith
+| R R Van Wagenen
+| R R Martin
+| R R Jr Gensler
+| R R Dean III
+| R T Pittman III
+| Yi Wen Tan
+| Yohannes Atlaw
+| Yon See
+| Youngjoon Lee
+;
