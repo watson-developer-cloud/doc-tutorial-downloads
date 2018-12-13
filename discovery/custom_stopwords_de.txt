@@ -1,4 +1,6 @@
-| German default stopword listaber
+| German default stopword list
+
+aber
 alle
 allem
 allen
