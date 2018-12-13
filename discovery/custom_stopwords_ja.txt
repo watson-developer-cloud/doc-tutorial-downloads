@@ -1,4 +1,6 @@
-| Japanese default stopword listの
+| Japanese default stopword list
+
+の
 に
 は
 を
