@@ -1,4 +1,6 @@
-| Brazilian Portuguese default stopword listde
+| Brazilian Portuguese default stopword list
+
+de
 a
 o
 que
