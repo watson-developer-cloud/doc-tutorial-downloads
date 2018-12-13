@@ -1,4 +1,6 @@
-| US English default stopword lista
+| US English default stopword list
+
+a
 an
 and
 are
