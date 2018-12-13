@@ -1,4 +1,6 @@
-| Spanish default stopword listde
+| Spanish default stopword list
+
+de
 la
 que
 el
