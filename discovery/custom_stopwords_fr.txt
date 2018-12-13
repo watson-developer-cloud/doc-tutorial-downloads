@@ -1,4 +1,6 @@
-| French default stopword listau
+| French default stopword list
+
+au
 aux
 avec
 ce
