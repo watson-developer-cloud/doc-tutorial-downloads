@@ -1,4 +1,6 @@
-| Dutch default stopword listde
+| Dutch default stopword list
+
+de
 en
 van
 ik
