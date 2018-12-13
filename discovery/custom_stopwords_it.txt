@@ -1,4 +1,6 @@
-| Italian default stopword listad
+| Italian default stopword list
+
+ad
 al
 allo
 ai
