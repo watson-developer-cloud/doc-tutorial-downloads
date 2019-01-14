@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "documentId": {
+      "type": "string"
+    },
+    "utterances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "utteranceStartTime": {
+            "type": "integer"
+          },
+          "utterance": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "confidence",
+          "utterance",
+          "utteranceStartTime"
+        ]
+      }
+    }
+  },
+  "required": [
+    "documentId",
+    "utterances"
+  ]
+}

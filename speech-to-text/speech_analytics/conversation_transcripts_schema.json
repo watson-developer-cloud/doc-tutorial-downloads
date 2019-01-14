@@ -1,0 +1,177 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "transcript": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "content": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "number"
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "cluster_id": {
+                    "type": "string"
+                  },
+                  "topic_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cluster_id",
+                  "model_id",
+                  "topic_name"
+                ]
+              }
+            },
+            "from": {
+              "type": "number"
+            },
+            "transcript": {
+              "type": "string"
+            },
+            "tone": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tone_id": {
+                    "type": "string"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "tone_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "score",
+                  "tone_id",
+                  "tone_name"
+                ]
+              }
+            },
+            "speaker_turn_id": {
+              "type": "integer"
+            },
+            "speaker": {
+              "type": "integer"
+            },
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "relevance": {
+                    "type": "number"
+                  },
+                  "count": {
+                    "type": "integer"
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "sentiment": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "from",
+            "keywords",
+            "sentiment",
+            "speaker",
+            "speaker_turn_id",
+            "to",
+            "tone",
+            "topics",
+            "transcript"
+          ]
+        }
+      },
+      "id": {
+        "type": "string"
+      },
+      "tone": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "string"
+            },
+            "tone_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "score",
+            "tone_name"
+          ]
+        }
+      },
+      "topic": {
+        "type": "string"
+      },
+      "sentiment": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "score": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "label",
+            "score"
+          ]
+        }
+      }
+    },
+    "required": [
+      "content",
+      "id",
+      "sentiment",
+      "tone",
+      "topic",
+      "transcript"
+    ]
+  }
+}

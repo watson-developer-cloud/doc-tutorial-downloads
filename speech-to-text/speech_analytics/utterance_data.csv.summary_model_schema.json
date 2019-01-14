@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "numberOfDocuments": {
+      "type": "integer"
+    },
+    "documentFrequencies": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "items"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "minNgramSize": {
+      "type": "integer"
+    },
+    "maxNgramSize": {
+      "type": "integer"
+    },
+    "maxNgrams": {
+      "type": "integer"
+    },
+    "conversationDocumentProcessor": {
+      "type": "object",
+      "properties": {
+        "stopWordSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "freqWordSet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minWordsPerUtterance": {
+          "type": "integer"
+        },
+        "channelIdentifiersToIgnore": {
+          "type": "array"
+        },
+        "numTurnsToRemove": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channelIdentifiersToIgnore",
+        "freqWordSet",
+        "minWordsPerUtterance",
+        "numTurnsToRemove",
+        "stopWordSet"
+      ]
+    },
+    "conversationNGramProcessor": {
+      "type": "object",
+      "properties": {
+        "beginningRatio": {
+          "type": "number"
+        },
+        "beginningWeightingFactor": {
+          "type": "integer"
+        },
+        "beginningMinCount": {
+          "type": "integer"
+        },
+        "restWeightingFactor": {
+          "type": "integer"
+        },
+        "restMinCount": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "beginningMinCount",
+        "beginningRatio",
+        "beginningWeightingFactor",
+        "restMinCount",
+        "restWeightingFactor"
+      ]
+    }
+  },
+  "required": [
+    "conversationDocumentProcessor",
+    "conversationNGramProcessor",
+    "documentFrequencies",
+    "maxNgramSize",
+    "maxNgrams",
+    "minNgramSize",
+    "numberOfDocuments"
+  ]
+}
