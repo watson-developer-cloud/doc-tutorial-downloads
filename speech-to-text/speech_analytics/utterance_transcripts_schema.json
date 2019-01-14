@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "content": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "relevance": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "relevance",
+                  "text"
+                ]
+              }
+            },
+            "to": {
+              "type": "number"
+            },
+            "from": {
+              "type": "number"
+            },
+            "sentiment": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "label",
+                "score"
+              ]
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "topic_name": {
+                    "type": "string"
+                  },
+                  "cluster_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cluster_id",
+                  "model_id",
+                  "topic_name"
+                ]
+              }
+            },
+            "speaker": {
+              "type": "integer"
+            },
+            "tone": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tone_name": {
+                    "type": "string"
+                  },
+                  "tone_id": {
+                    "type": "string"
+                  },
+                  "score": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "score",
+                  "tone_id",
+                  "tone_name"
+                ]
+              }
+            },
+            "speaker_turn_id": {
+              "type": "integer"
+            },
+            "transcript": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "keywords",
+            "sentiment",
+            "speaker",
+            "speaker_turn_id",
+            "to",
+            "tone",
+            "topics",
+            "transcript"
+          ]
+        }
+      },
+      "transcript": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "content",
+      "id",
+      "transcript"
+    ]
+  }
+}

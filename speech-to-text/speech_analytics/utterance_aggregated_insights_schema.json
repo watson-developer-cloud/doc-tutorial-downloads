@@ -1,0 +1,886 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "Product Snapshot": {
+      "type": "object",
+      "properties": {
+        "insights": {
+          "type": "object",
+          "properties": {
+            "total_number": {
+              "type": "integer"
+            },
+            "sentiments": {
+              "type": "object",
+              "properties": {
+                "negative": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "positive": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "neutral": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                }
+              },
+              "required": [
+                "negative",
+                "neutral",
+                "positive"
+              ]
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "total_number": {
+                    "type": "integer"
+                  },
+                  "sentiments": {
+                    "type": "object",
+                    "properties": {
+                      "negative": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "positive": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "neutral": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "negative",
+                      "neutral",
+                      "positive"
+                    ]
+                  },
+                  "topic_size": {
+                    "type": "number"
+                  },
+                  "topic_id": {
+                    "type": "string"
+                  },
+                  "keywords": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "total_number": {
+                          "type": "integer"
+                        },
+                        "sentiments": {
+                          "type": "object",
+                          "properties": {
+                            "negative": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "positive": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "neutral": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "negative",
+                            "neutral",
+                            "positive"
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "tones": {
+                          "type": "object",
+                          "properties": {
+                            "Excited": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Satisfied": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Sad": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Frustrated": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "None": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Sympathetic": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Polite": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            },
+                            "Impolite": {
+                              "type": "object",
+                              "properties": {
+                                "set": {
+                                  "type": "array"
+                                },
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "score",
+                                "set"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "Excited",
+                            "Frustrated",
+                            "Impolite",
+                            "None",
+                            "Polite",
+                            "Sad",
+                            "Satisfied",
+                            "Sympathetic"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "sentiments",
+                        "tones",
+                        "total_number"
+                      ]
+                    }
+                  },
+                  "tones": {
+                    "type": "object",
+                    "properties": {
+                      "Excited": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Satisfied": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Sad": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Frustrated": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "None": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Sympathetic": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Polite": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      },
+                      "Impolite": {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "score",
+                          "set"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "Excited",
+                      "Frustrated",
+                      "Impolite",
+                      "None",
+                      "Polite",
+                      "Sad",
+                      "Satisfied",
+                      "Sympathetic"
+                    ]
+                  },
+                  "topic_cohesion": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "keywords",
+                  "sentiments",
+                  "tones",
+                  "topic_cohesion",
+                  "topic_id",
+                  "topic_size",
+                  "total_number"
+                ]
+              }
+            },
+            "tones": {
+              "type": "object",
+              "properties": {
+                "Excited": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Satisfied": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Sad": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Frustrated": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "None": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Sympathetic": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Polite": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                },
+                "Impolite": {
+                  "type": "object",
+                  "properties": {
+                    "set": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "score",
+                    "set"
+                  ]
+                }
+              },
+              "required": [
+                "Excited",
+                "Frustrated",
+                "Impolite",
+                "None",
+                "Polite",
+                "Sad",
+                "Satisfied",
+                "Sympathetic"
+              ]
+            }
+          },
+          "required": [
+            "sentiments",
+            "tones",
+            "topics",
+            "total_number"
+          ]
+        },
+        "module": {
+          "type": "string"
+        },
+        "analysis_time": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysis_time",
+        "insights",
+        "module"
+      ]
+    }
+  },
+  "required": [
+    "Product Snapshot"
+  ]
+}
