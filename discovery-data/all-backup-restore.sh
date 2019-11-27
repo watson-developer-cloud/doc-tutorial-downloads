@@ -22,9 +22,9 @@ while getopts f:n: OPT
 do
   case $OPT in
     "f" ) BACKUP_FILE="$OPTARG" ;;
-    "n" ) BACKUP_ARGS="${BACKUP_ARGS} -n $OPTARG" ;;
-  esac
-done
+    "n" ) KUBECTL_ARGS="${KUBECTL_ARGS} --namespace=$OPTARG" ;;
+esac
+done 
 
 ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
 
@@ -47,6 +47,9 @@ if [ ${COMMAND} = 'backup' ] ; then
   run
   tar zcf "${BACKUP_FILE}" "${BACKUP_DIR}"
   rm -rf "${BACKUP_DIR}"
+  echo
+  echo "Backup Script Complete"
+  echo
 fi
 
 if [ ${COMMAND} = 'restore' ] ; then
@@ -55,14 +58,22 @@ if [ ${COMMAND} = 'restore' ] ; then
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
     echo "no such file: ${BACKUP_FILE}"
+    echo
     exit 1
   fi
   tar xf "${BACKUP_FILE}"
   run
   rm -rf "${BACKUP_DIR}"
-  CORE_PODS=`kubectl ${KUBECTL_ARGS} get pods | grep "${RELEASE_NAME}-watson-discovery" | grep -e "gateway" -e "ingestion" -e "orchestrator" | grep -v "watson-discovery-*-test" | cut -d ' ' -f 1`
-  kubectl delete pod ${CORE_PODS}
+
+  echo "Restarting central pods:"
+  CORE_PODS=$(kubectl ${KUBECTL_ARGS} get pods | grep "${RELEASE_NAME}-watson-discovery" | grep -e "gateway" -e "ingestion" -e "orchestrator" | grep -v "watson-discovery-*-test" | cut -d ' ' -f 1)
+
+  kubectl delete pod ${CORE_PODS} 
 
   RANKER_MASTER_PODS=$(kubectl ${KUBECTL_ARGS} get pods -l component=master -o jsonpath="{.items[*].metadata.name}")
   kubectl delete pod ${RANKER_MASTER_PODS}
+
+  echo
+  echo "Restore Script Complete"
+  echo
 fi
