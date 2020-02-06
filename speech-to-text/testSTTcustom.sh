@@ -16,24 +16,17 @@
 #   and PASSWORD.
 #
 # See the following instructions for getting your own credentials:
-#   https://console.bluemix.net/docs/services/watson/getting-started-credentials.html
+#   https://cloud.ibm.com/docs/watson?topic=watson-iam
 #
 
 USERNAME="apikey"
-PASSWORD="iam_apikey"
+PASSWORD="YOUR_IAM_APIKEY"
 
 #
-# Set URL to the URL for the region in which you created your service
-# instance. Change the variable to one of the following values if you do
-# not use the default US South data center:
-#
-# US South:  "https://stream.watsonplatform.net/speech-to-text/api/v1"
-# US East:   "https://gateway-wdc.watsonplatform.net/speech-to-text/api/v1"
-# Germany:   "https://stream-fra.watsonplatform.net/speech-to-text/api/v1"
-# Sydney:    "https://gateway-syd.watsonplatform.net/speech-to-text/api/v1"
+# Set URL to the URL for your service instance as provided in your service credentials.
 #
 
-URL="https://stream.watsonplatform.net/speech-to-text/api/v1"
+URL="YOUR_URL"
 
 #
 # Set INSECURE to "-k" to use insecure SSL connections that bypass the use
@@ -69,7 +62,7 @@ RESPJSON=""
 function getHttpResponse ()
 {
   RESPCODE=`cat $TEMPFILE | sed -n -e 's/.*HTTP\/1\.1 \([2-9][0-9]\{2\}\) .*/\1/p'`
-  RESPJSON=`cat $TEMPFILE | sed -n -e '/^[A-Z].*$/d' -e '/^[^A-Z].*$/p'`
+  RESPJSON=`cat $TEMPFILE | sed -n -e '/^[a-zA-Z].*$/d' -e '/^[^a-zA-Z].*$/p'`
   rm $TEMPFILE
 }
 
@@ -81,7 +74,7 @@ function getCorpusStatus ()
   while [ "$STATUS" != 'analyzed' ]; do
     sleep 10
     RESPONSE=`curl -X GET $INSECURE -u "$USERNAME":"$PASSWORD" \
-      "$URL/customizations/$1/corpora/$2" 2> /dev/null`
+      "$URL/v1/customizations/$1/corpora/$2" 2> /dev/null`
     STATUS=`echo $RESPONSE | sed -e 's/.*\"status\": \"\([^\"]*\)\".*/\1/'`
     printf "Status: %-15s ( %d )\n" "$STATUS" $TIME
     let "TIME += 10"
@@ -96,7 +89,7 @@ function getModelStatus ()
   while [ "$STATUS" != $2 ]; do
     sleep 10
     RESPONSE=`curl -X GET $INSECURE -u "$USERNAME":"$PASSWORD" \
-      "$URL/customizations/$1" 2> /dev/null`
+      "$URL/v1/customizations/$1" 2> /dev/null`
     STATUS=`echo $RESPONSE | sed -e 's/.*\"status\": \"\([^\"]*\)\".*/\1/'`
     printf "Status: %-9s ( %d )\n" "$STATUS" $TIME
     let "TIME += 10"
@@ -114,7 +107,7 @@ curl -X POST $INSECURE -i -u "$USERNAME":"$PASSWORD" \
   --data "{\"name\": \"Custom model number one\", \
     \"base_model_name\": \"en-US_BroadbandModel\", \
     \"description\": \"My first STT custom model\"}" \
-  "$URL/customizations" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Model creation returns: $RESPCODE\n"
@@ -140,7 +133,7 @@ printf "Model customization_id: $CUSTOMIZATION_ID\n"
 printf "\nAdding corpus file...\n"
 curl -X POST $INSECURE -i -u "$USERNAME":"$PASSWORD" \
   --data-binary "@$CORPUS_FILE" \
-  "$URL/customizations/$CUSTOMIZATION_ID/corpora/$CORPUS_NAME" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/corpora/$CORPUS_NAME" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Adding corpus file returns: $RESPCODE\n"
@@ -166,7 +159,7 @@ printf "Corpus analysis done!\n"
 
 printf "\nListing words...\n"
 curl -X GET $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations/$CUSTOMIZATION_ID/words?sort=count" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/words?sort=count" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Listing words returns: $RESPCODE\n"
@@ -184,7 +177,7 @@ printf "\nAdding single word...\n"
 curl -X PUT $INSECURE -i -u "$USERNAME":"$PASSWORD" \
   --header "Content-Type: application/json" \
   --data "{\"sounds_like\": [\"T. C. P. I. P.\"], \"display_as\": \"TCP/IP\"}" \
-  "$URL/customizations/$CUSTOMIZATION_ID/words/tcpip" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/words/tcpip" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Adding single word returns: $RESPCODE\n"
@@ -208,7 +201,7 @@ curl -X POST $INSECURE -i -u "$USERNAME":"$PASSWORD" \
   --data "{\"words\": \
     [{\"word\": \"IEEE\", \"sounds_like\": [\"I. triple E.\"], \"display_as\": \"IEEE\"},\
     {\"word\": \"hhonors\", \"sounds_like\": [\"H. honors\", \"hilton honors\"], \"display_as\": \"HHonors\"}]}" \
-  "$URL/customizations/$CUSTOMIZATION_ID/words" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/words" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Adding multiple words returns: $RESPCODE\n"
@@ -232,7 +225,7 @@ printf "Multiple words added!\n"
 
 printf "\nListing words...\n"
 curl -X GET $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations/$CUSTOMIZATION_ID/words?word_type=user&sort=alphabetical" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/words?word_type=user&sort=alphabetical" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Listing words returns: $RESPCODE\n"
@@ -249,7 +242,7 @@ printf "Words added by user saved in file:\n   $FILENAME\n"
 
 printf "\nTraining custom model...\n"
 curl -X POST $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations/$CUSTOMIZATION_ID/train" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID/train" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Training request returns: $RESPCODE\n"
@@ -273,7 +266,7 @@ printf "Training complete!\n"
 
 printf "\nGetting custom models...\n"
 curl -X GET $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Listing custom models returns: $RESPCODE\n"
@@ -298,7 +291,7 @@ exit 0
 
 printf "\nDeleting custom model...\n"
 curl -X DELETE $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations/$CUSTOMIZATION_ID" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations/$CUSTOMIZATION_ID" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Deleting custom model returns: $RESPCODE\n"
@@ -315,7 +308,7 @@ printf "Custom model deleted!\n"
 
 printf "\nGetting custom models...\n"
 curl -X GET $INSECURE -i -u "$USERNAME":"$PASSWORD" \
-  "$URL/customizations" 2> /dev/null > $TEMPFILE
+  "$URL/v1/customizations" 2> /dev/null > $TEMPFILE
 getHttpResponse
 
 printf "Listing custom models returns: $RESPCODE\n"
