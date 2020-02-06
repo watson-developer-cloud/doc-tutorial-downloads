@@ -23,7 +23,8 @@ USERNAME="apikey"
 PASSWORD="YOUR_IAM_APIKEY"
 
 #
-# Set URL to the URL for your service instance as provided in your service credentials.
+# Set URL to the URL for your service instance as provided in your service
+# credentials.
 #
 
 URL="YOUR_URL"
