@@ -1,0 +1,7 @@
+export ETCDCTL_API=3 && \
+etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/crawler/locks/pollJob/" && \
+etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/orchestrator/timerbased.leader" && \
+etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/crawler/crawler.security.leader" && \
+etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/all/ranker" && \
+etcdctl --insecure-skip-tls-verify=true --insecure-transport=false get --prefix --keys-only=true "/wex/global/crawler/" | \
+grep -e "/status" -e "/state" | xargs --no-run-if-empty  -n 1 etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del

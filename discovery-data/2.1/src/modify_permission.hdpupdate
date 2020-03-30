@@ -1,0 +1,5 @@
+if hdfs dfs -test -e /tmp/logs/root ; then hdfs dfs -chown -R root /tmp/logs/root ; fi && \
+if hdfs dfs -test -e /user/sdu ; then hdfs dfs -chown -R sdu /user/sdu ; fi && \
+if hdfs dfs -test -e /user/root ; then hdfs dfs -chown -R root /user/root ; fi && \
+if hdfs dfs -test -e /tmp/logs ; then hdfs dfs -chmod -R 770 /tmp/logs/* ; fi && \
+if hdfs dfs -test -e /tmp/logs ; then hdfs dfs -chmod 1777 /tmp/logs ; fi
