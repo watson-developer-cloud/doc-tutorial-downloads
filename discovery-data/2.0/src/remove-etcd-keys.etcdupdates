@@ -1,4 +1,0 @@
-etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/crawler/locks/pollJob/" && \
-etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/orchestrator/timerbased.leader" && \
-etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/wex/global/crawler/crawler.security.leader" && \
-etcdctl --insecure-skip-tls-verify=true --insecure-transport=false del --prefix "/all/ranker"
