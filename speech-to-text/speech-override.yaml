@@ -27,7 +27,6 @@ global:
       enabled: true
     enUsShortFormNarrowbandModel:
       enabled: true
-
     nlNlBroadbandModel:
       enabled: false
     nlNlNarrowbandModel:
@@ -73,7 +72,7 @@ global:
 
   ttsVoices:
     enUSMichaelV3Voice:
-     enabled: true
+      enabled: true
     enUSAllisonV3Voice:
       enabled: true
     enUSLisaV3Voice:
