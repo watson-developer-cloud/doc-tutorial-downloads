@@ -40,9 +40,9 @@ GATEWAY_RELEASE_NAME=${RELEASE_NAME}
 PG_RELEASE_NAME=${RELEASE_NAME}
 
 # Check the sequetial installation. If discovery has multiple release but only a gateway release, it should be the sequetial installation.
-RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery" | tr ' ' '\n' | uniq | wc -l`
+RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery" | tr ' ' '\n' | uniq | grep -c "^" || true`
 if [ ${RELEASE_NUM} -gt 1 ] ; then
-  GATEWAY_RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery,run=gateway" | tr ' ' '\n' | uniq | wc -l`
+  GATEWAY_RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery,run=gateway" | tr ' ' '\n' | uniq | grep -c "^" || true`
   if [ ${GATEWAY_RELEASE_NUM} == 1 ] ; then
     GATEWAY_RELEASE_NAME="core"
     PG_RELEASE_NAME="bedrock"
