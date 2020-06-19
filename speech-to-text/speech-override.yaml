@@ -10,7 +10,7 @@ affinity: {}
 global:
   dockerRegistryPrefix: "cp.icr.io/cp/watson-speech"
   image:
-    pullSecret: "docker-pull-{{ .Release.Namespace }}-cp-icr-io-cp-spch-registry-registry"
+    pullSecret: "docker-pull-{{ .Release.Namespace }}-cp-icr-io-spch-registry-registry"
     pullPolicy: "IfNotPresent"
 
   datastores:
@@ -27,14 +27,7 @@ global:
       enabled: true
     enUsShortFormNarrowbandModel:
       enabled: true
-    nlNlBroadbandModel:
-      enabled: false
-    nlNlNarrowbandModel:
-      enabled: false
-    itItBroadbandModel:
-      enabled: false
-    itItNarrowbandModel:
-      enabled: false
+
     jaJpBroadbandModel:
       enabled: false
     jaJpNarrowbandModel:
@@ -69,6 +62,14 @@ global:
       enabled: false
     zhCnNarrowbandModel:
       enabled: false
+    itItBroadbandModel:
+      enabled: false
+    itItNarrowbandModel:
+      enabled: false
+    nlNlBroadbandModel:
+      enabled: false
+    nlNlNarrowbandModel:
+      enabled: false
 
   ttsVoices:
     enUSMichaelV3Voice:
@@ -77,6 +78,7 @@ global:
       enabled: true
     enUSLisaV3Voice:
       enabled: true
+
     deDEBirgitV3Voice:
       enabled: false
     deDEDieterV3Voice:
