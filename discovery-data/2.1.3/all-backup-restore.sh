@@ -139,12 +139,12 @@ if [ ${COMMAND} = 'restore' ] ; then
   export RELEASE_NAME="core"
   CORE_PODS=$(kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{.items[*].metadata.name}" -l "release=${RELEASE_NAME},run in (gateway, management, ingestion-api)")
 
+  start_ingestion
+
   kubectl delete pod ${KUBECTL_ARGS} ${CORE_PODS} ${HDP_POD}
 
   RANKER_MASTER_PODS=$(kubectl ${KUBECTL_ARGS} get pods -l component=master -o jsonpath="{.items[*].metadata.name}")
   kubectl delete pod ${KUBECTL_ARGS} ${RANKER_MASTER_PODS}
-
-  start_ingestion
 
   ${SCRIPT_DIR}/post-restore.sh ${RELEASE_NAME}
 
