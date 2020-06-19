@@ -43,7 +43,7 @@ ELASTIC_POD=""
 
 # Check whether data node exists. If exists, this is WD 2.1.2 or later, and perform backup/restore on data node.
 # If not, use elastic pod.
-if [ `kubectl get pods ${KUBECTL_ARGS} -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=data | wc -l` != '0' ] ; then
+if [ `kubectl get pods ${KUBECTL_ARGS} -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=data | grep -c "^" || true` != '0' ] ; then
   echo 'ElasticSearch data nodes exist. Backup/Restore will be performed on them.'
   ELASTIC_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=data`
 else

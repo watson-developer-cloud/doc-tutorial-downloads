@@ -48,7 +48,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"wddata_`date "+%Y%m%d_%H%M%S"`.backup"}
   echo "Start backup wddata..."
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c 'rm -f /tmp/'${WDDATA_BACKUP}' && \
-  if [ `ls mnt | wc -l | xargs` != "0" ] ; then tar zcf /tmp/'${WDDATA_BACKUP}' --exclude ".nfs*" --exclude wexdata/logs wexdata/* mnt/* ; else tar zcf /tmp/'${WDDATA_BACKUP}' --exclude ".nfs*" --exclude wexdata/logs wexdata/* ; fi; code=$?; if [ $code -ne 0 -a $code -ne 1 ] ; then echo "Fatal Error"; exit $code; fi'
+  tar zcf /tmp/'${WDDATA_BACKUP}' --exclude ".nfs*" --exclude wexdata/logs --exclude "wexdata/zing/data/crawler/*/temp" wexdata/* ; code=$?; if [ $code -ne 0 -a $code -ne 1 ] ; then echo "Fatal Error"; exit $code; fi'
   wait_cmd ${GATEWAY_POD} "tar zcf" ${KUBECTL_ARGS}
   kube_cp_to_local ${GATEWAY_POD} "${BACKUP_FILE}" "/tmp/${WDDATA_BACKUP}" ${KUBECTL_ARGS}
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c "rm -f /tmp/${WDDATA_BACKUP}"

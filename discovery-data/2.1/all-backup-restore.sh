@@ -43,9 +43,9 @@ fi
 
 # Check the sequetial installation. If discovery has multiple release but only a gateway release, it should be the sequetial installation.
 IS_SEQ_INS=false
-RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery" | tr ' ' '\n' | uniq | wc -l`
+RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery" | tr ' ' '\n' | uniq | grep -c "^" || true`
 if [ ${RELEASE_NUM} -gt 1 ] ; then
-  GATEWAY_RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery,run=gateway" | tr ' ' '\n' | uniq | wc -l`
+  GATEWAY_RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery,run=gateway" | tr ' ' '\n' | uniq | grep -c "^" || true`
   if [ ${GATEWAY_RELEASE_NUM} == 1 ] ; then
     IS_SEQ_INS=true
   fi
@@ -109,7 +109,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   echo "Waiting for ${INGESTION_RESOURCE_NAME} to be scaled..."
   while :
   do
-    if [ `kubectl get pod ${KUBECTL_ARGS} -l release=${INGESTION_RELEASE_NAME},run=ingestion | wc -l` = '0' ] ; then
+    if [ `kubectl get pod ${KUBECTL_ARGS} -l release=${INGESTION_RELEASE_NAME},run=ingestion | grep -c "^" || true` = '0' ] ; then
       break
     else
       sleep 1

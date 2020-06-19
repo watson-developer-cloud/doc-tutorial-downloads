@@ -1,0 +1,15 @@
+# bucket path
+common tmp*
+common sdu*
+common global/fileResource/701db916-fc83-57ab-0000-000000000001*
+common global/fileResource/701db916-fc83-57ab-0000-000000000007*
+common global/fileResource/701db916-fc83-57ab-0000-00000000000b*
+common global/fileResource/701db916-fc83-57ab-0000-00000000000c*
+common global/fileResource/701db916-fc83-57ab-0000-00000000000f*
+common global/fileResource/701db916-fc83-57ab-0000-000000000010*
+common global/fileResource/701db916-fc83-57ab-0000-000000000011*
+common global/fileResource/701db916-fc83-57ab-0000-000000000013*
+common global/fileResource/701db916-fc83-57ab-0000-000000000015*
+common global/fileResource/701db916-fc83-57ab-0000-00000000001a*
+common global/fileResource/701db916-fc83-57ab-0000-00000000001c*
+common global/fileResource/701db916-fc83-57ab-0000-00000000001d*

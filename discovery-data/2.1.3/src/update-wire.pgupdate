@@ -1,0 +1,4 @@
+export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \
+export PGPASSWORD=${PGPASSWORD:-`cat ${STKEEPER_PG_SU_PASSWORDFILE}`} && \
+export PGHOST=${PGHOST:-localhost} && \
+psql -d ranker_training -c 'UPDATE data SET version = version+1'

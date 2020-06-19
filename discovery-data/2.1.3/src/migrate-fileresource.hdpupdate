@@ -1,0 +1,1 @@
+if hdfs dfs -test -e /user/root/global/fileResource > /dev/null ; then hdfs dfs -mkdir -p /global > /dev/null ; hdfs dfs -mv /user/root/global/fileResource /global/fileResource > /dev/null ; fi

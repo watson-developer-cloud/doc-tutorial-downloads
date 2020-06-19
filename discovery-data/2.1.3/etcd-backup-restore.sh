@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-ROOT_DIR_ETCD="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd -P)"
+ROOT_DIR_ETCD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 typeset -r ROOT_DIR_ETCD
 
 # shellcheck source=lib/restore-utilites.bash
@@ -16,11 +16,12 @@ ETCD_BACKUP_FILE="${ETCD_BACKUP_DIR}/etcd_snapshot.db"
 PG_SERVICE_FILE="${ETCD_BACKUP_DIR}/pg_service_name.txt"
 
 printUsage() {
-  echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile] [-n namespace]"
+  echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
+  echo "Env: WD_VERSION - The version of Watson Discovery. ex) '2.1.3'"
   exit 1
 }
 
-if [ $# -lt 2 ] ; then
+if [ $# -lt 2 -o ! -n "${WD_VERSION+UNDEF}" ] ; then
   printUsage
 fi
 
@@ -36,23 +37,12 @@ do
   esac
 done
 
-GATEWAY_RELEASE_NAME=${RELEASE_NAME}
-PG_RELEASE_NAME=${RELEASE_NAME}
-
-# Check the sequetial installation. If discovery has multiple release but only a gateway release, it should be the sequetial installation.
-RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery" | tr ' ' '\n' | uniq | grep -c "^" || true`
-if [ ${RELEASE_NUM} -gt 1 ] ; then
-  GATEWAY_RELEASE_NUM=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[*].metadata.labels.release}" -l "app.kubernetes.io/name=discovery,run=gateway" | tr ' ' '\n' | uniq | grep -c "^" || true`
-  if [ ${GATEWAY_RELEASE_NUM} == 1 ] ; then
-    GATEWAY_RELEASE_NAME="core"
-    PG_RELEASE_NAME="bedrock"
-  fi
-fi
+GATEWAY_RELEASE_NAME="core"
+PG_RELEASE_NAME="crust"
 
 GATEWAY_POD=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${GATEWAY_RELEASE_NAME},run=gateway`
 PG_SERVICE_NAME=`kubectl exec ${KUBECTL_ARGS} ${GATEWAY_POD} -- bash -c 'echo -n ${PGHOST}'`
 PGPORT=`kubectl get svc ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.ports[0].port}' -l release=${PG_RELEASE_NAME},component=stolon-proxy`
-
 
 echo "ETCD: "
 echo "Release name: $RELEASE_NAME"

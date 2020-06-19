@@ -1,3 +1,14 @@
+get_stat_command(){
+  if [ "$(uname)" = "Darwin" ] ; then
+    echo 'stat -f="%z"'
+  elif [ "$(uname)" = "Linux" ] ; then
+    echo 'stat --printf="%s"'
+  else
+    echo "Unexpected os type. Use: stat --printf='%s'" >&2
+    echo 'stat --printf="%s"'
+  fi
+}
+
 kube_cp_from_local(){
   POD=$1
   shift
@@ -8,11 +19,13 @@ kube_cp_from_local(){
   SPLITE_DIR=./tmp_split_bakcup
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
-  LOCAL_SIZE=`stat --printf="%s" ${LOCAL_BACKUP}`
-  if [ ${LOCAL_SIZE} -gt 500000000 ] ; then
+  STAT_CMD="`get_stat_command` ${LOCAL_BACKUP}"
+  LOCAL_SIZE=`eval "${STAT_CMD}"`
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  if [ ${SPLIT_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLIT_SIZE} ] ; then
     rm -rf ${SPLITE_DIR}
     mkdir -p ${SPLITE_DIR}
-    split -d -a 5 -b 500000000 ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
+    split -d -a 5 -b ${SPLIT_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
     for file in ${SPLITE_DIR}/*; do
       FILE_BASE_NAME=$(basename "${file}")
       kubectl cp $@ "${file}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
@@ -32,12 +45,13 @@ kube_cp_to_local(){
   POD_BACKUP=$1
   shift
   SPLITE_DIR=./tmp_split_bakcup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
   POD_SIZE=`kubectl $@ exec ${POD} -- bash -c "stat --printf="%s" ${POD_BACKUP}"`
-  if [ ${POD_SIZE} -gt 500000000 ] ; then
+  if [ ${SPLIT_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLIT_SIZE} ] ; then
     rm -rf ${SPLITE_DIR}
     mkdir -p ${SPLITE_DIR}
-    kubectl exec $@ ${POD} -- bash -c "split -d -a 5 -b 500000000 ${POD_BACKUP} ${POD_BACKUP}.split."
+    kubectl exec $@ ${POD} -- bash -c "split -d -a 5 -b ${SPLIT_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split."
     FILE_LIST=`kubectl exec $@ ${POD} -- bash -c "ls ${POD_BACKUP}.split.*"`
     for file in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${file}")
