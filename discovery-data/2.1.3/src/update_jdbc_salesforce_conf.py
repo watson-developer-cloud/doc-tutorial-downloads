@@ -6,7 +6,6 @@ import os
 import re
 import sys
 import tempfile
-import urllib.parse
 import urllib3
 import zipfile
 from urllib3.exceptions import InsecureRequestWarning
@@ -95,7 +94,7 @@ for dataset in datasets["items"]:
       crawlerUrl = "datasets/" + datasetId + "/crawlers/" + crawlerId
       conf = get(zingBaseUrl, crawlerUrl)
       data_source = conf["datasource_settings"]
-      if "jdbc_driver_classpath" in data_source.keys() and data_source["jdbc_driver_classpath"] and re.match(pgPathRegex, data_source["jdbc_driver_classpath"]) == None:
+      if "jdbc_driver_classpath" in data_source.keys() and data_source["jdbc_driver_classpath"] and re.match(pgPathRegex, data_source["jdbc_driver_classpath"]) is None:
         print("    User-created JDBC crawler found")
         updateResource(data_source, "jdbc_driver_classpath", "jdbc_driver_resource_id", crawlerUrl)
       elif "jar_location" in data_source.keys() and data_source["jar_location"]:

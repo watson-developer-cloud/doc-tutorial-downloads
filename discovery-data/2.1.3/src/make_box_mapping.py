@@ -4,7 +4,6 @@ import requests
 import json
 import os
 import sys
-import urllib.parse
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 urllib3.disable_warnings(InsecureRequestWarning)
