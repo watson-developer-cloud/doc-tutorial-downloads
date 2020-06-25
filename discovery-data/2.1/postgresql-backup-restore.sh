@@ -37,14 +37,14 @@ do
   esac
 done
 
-echo "Postgressql: "
-echo "Release name: $RELEASE_NAME"
+brlog "INFO" "Postgressql: "
+brlog "INFO" "Release name: $RELEASE_NAME"
 
 # backup
 if [ ${COMMAND} = 'backup' ] ; then
   PG_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},helm.sh/chart=postgresql`
   BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
-  echo "Start backup postgresql..."
+  brlog "INFO" "Start backup postgresql"
   kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c 'export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \
   export PGPASSWORD=${PGPASSWORD:-`cat ${STKEEPER_PG_SU_PASSWORDFILE}`} && \
   export PGHOST=${PGHOST:-localhost} && \
@@ -54,9 +54,15 @@ if [ ${COMMAND} = 'backup' ] ; then
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${BACKUP_VERSION}' && \
   tar zcf '${PG_BACKUP}' -C /tmp '${PG_BACKUP_DIR}
   wait_cmd ${PG_POD} "tar zcf" ${KUBECTL_ARGS}
+  brlog "INFO" "Transfering archive..."
   kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${KUBECTL_ARGS}
   kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
-  echo "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Verifying backup..."
+  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
+  brlog "INFO" "Done: ${BACKUP_FILE}"
 fi
 
 # restore
@@ -65,8 +71,8 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
-    echo "Nothing to Restore"
+    brlog "WARN" "no such file: ${BACKUP_FILE}"
+    brlog "WARN" "Nothing to Restore"
     echo
     exit 1
   fi
@@ -83,7 +89,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     fi
   fi
 
-  echo "Checking the SDU Resource Type..." 
+  brlog "INFO" "Checking the SDU Resource Type..." 
   # check sdu deployment exists. If exists, this is wd 2.1.0 or earlier. If not, this is wd 2.1.1, and the sdu resource type is statefulset
   if [ `kubectl get deployment ${KUBECTL_ARGS} -l release=${SDU_RELEASE_NAME},run=sdu | grep -c "^" || true` != '0' ] ; then
     SDU_RESOURCE_TYPE="deployment"
@@ -91,13 +97,13 @@ if [ ${COMMAND} = 'restore' ] ; then
     SDU_RESOURCE_TYPE="sts"
   fi
 
-  echo "SDU Resource Type: ${SDU_RESOURCE_TYPE}"
+  brlog "INFO" "SDU Resource Type: ${SDU_RESOURCE_TYPE}"
 
   SDU_API_RESOURCE=`kubectl get ${SDU_RESOURCE_TYPE} ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${SDU_RELEASE_NAME},run=sdu`
   SDU_API_REPLICAS=`kubectl get ${SDU_RESOURCE_TYPE} ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${SDU_RELEASE_NAME},run=sdu`
-  echo "Change replicas of ${SDU_API_RESOURCE} to 0".
+  brlog "INFO" "Change replicas of ${SDU_API_RESOURCE} to 0".
   kubectl scale ${SDU_RESOURCE_TYPE} ${KUBECTL_ARGS} ${SDU_API_RESOURCE} --replicas=0
-  echo "Waiting for ${SDU_API_RESOURCE} to be scaled..."
+  brlog "INFO" "Waiting for ${SDU_API_RESOURCE} to be scaled..."
   while :
   do
     if [ `kubectl get pod ${KUBECTL_ARGS} -l release=${SDU_RELEASE_NAME},run=sdu | grep -c "^" || true` = '0' ] ; then
@@ -106,7 +112,7 @@ if [ ${COMMAND} = 'restore' ] ; then
       sleep 1
     fi
   done
-  echo "Complete scale."
+  brlog "INFO" "Complete scale."
 
   PG_POD=""
 
@@ -115,8 +121,10 @@ if [ ${COMMAND} = 'restore' ] ; then
       PG_POD=${POD}
     fi
   done
-  echo "Start restore postgresql: ${BACKUP_FILE}"
+  brlog "INFO" "Start restore postgresql: ${BACKUP_FILE}"
+  brlog "INFO" "Transfering archive..."
   kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${KUBECTL_ARGS}
+  brlog "INFO" "Restoring data..."
   kubectl exec ${KUBECTL_ARGS} ${PG_POD} -- bash -c 'export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \
   export PGPASSWORD=${PGPASSWORD:-`cat ${STKEEPER_PG_SU_PASSWORDFILE}`} && \
   export PGHOST=${PGHOST:-localhost} && \
@@ -131,17 +139,17 @@ if [ ${COMMAND} = 'restore' ] ; then
   psql ${DATABASE} < '${PG_BACKUP_PREFIX}'${DATABASE}'${PG_BACKUP_SUFFIX}'; done && \
   rm -rf '${PG_BACKUP_DIR}' '${PG_BACKUP}
   wait_cmd ${PG_POD} "dropdb --if-exists" ${KUBECTL_ARGS}
-  echo "Done"
+  brlog "INFO" "Done"
 
-  echo "Run postgres-config job"
+  brlog "INFO" "Run postgres-config job"
   ./run-postgres-config-job.sh
 
-  echo "Restore replicas of ${SDU_API_RESOURCE}"
+  brlog "INFO" "Restore replicas of ${SDU_API_RESOURCE}"
   kubectl scale ${SDU_RESOURCE_TYPE} ${KUBECTL_ARGS} ${SDU_API_RESOURCE} --replicas=${SDU_API_REPLICAS}
 
-  echo "Applying updates"
+  brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   postgresql_updates
-  echo "Completed Updates"
+  brlog "INFO" "Completed Updates"
   echo
 fi

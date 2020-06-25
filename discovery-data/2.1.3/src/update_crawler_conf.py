@@ -87,12 +87,13 @@ for dataset in datasets["items"]:
     for crawlerId in crawlerIds:
       crawlerUrl = "datasets/" + datasetId + "/crawlers/" + crawlerId
       conf = get(zingBaseUrl, crawlerUrl)
-      data_source = conf["datasource_settings"]
-      if "database_url" in data_source.keys():
-        if "jdbc_driver_classpath" in data_source.keys() and re.match(pgPathRegex, data_source["jdbc_driver_classpath"]) != None:
-          data_source["jdbc_driver_classpath"] = pgJar
-          data_source["user"] = pgUser
-          data_source["password"] = pgPassword
-          deleteOldDocumentsIfExists(datasetId)
-          put(zingBaseUrl, crawlerUrl, conf)
-          post(zingBaseUrl, crawlerUrl + "/start?crawlMode=FULL")
+      if "datasource_settings" in conf.keys():
+        data_source = conf["datasource_settings"]
+        if "database_url" in data_source.keys():
+          if "jdbc_driver_classpath" in data_source.keys() and re.match(pgPathRegex, data_source["jdbc_driver_classpath"]) != None:
+            data_source["jdbc_driver_classpath"] = pgJar
+            data_source["user"] = pgUser
+            data_source["password"] = pgPassword
+            deleteOldDocumentsIfExists(datasetId)
+            put(zingBaseUrl, crawlerUrl, conf)
+            post(zingBaseUrl, crawlerUrl + "/start?crawlMode=FULL")

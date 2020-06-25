@@ -33,8 +33,8 @@ do
   esac
 done
 
-echo "WDData: "
-echo "Release name: $RELEASE_NAME"
+brlog "INFO" "WDData: "
+brlog "INFO" "Release name: $RELEASE_NAME"
 GATEWAY_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},run=gateway`
 ORG_KUBECTL_ARGS=${KUBECTL_ARGS} 
 
@@ -46,13 +46,19 @@ fi
 # backup wddata
 if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"wddata_`date "+%Y%m%d_%H%M%S"`.backup"}
-  echo "Start backup wddata..."
+  brlog "INFO" "Start backup wddata..."
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c 'rm -f /tmp/'${WDDATA_BACKUP}' && \
   tar zcf /tmp/'${WDDATA_BACKUP}' --exclude ".nfs*" --exclude wexdata/logs --exclude "wexdata/zing/data/crawler/*/temp" wexdata/* ; code=$?; if [ $code -ne 0 -a $code -ne 1 ] ; then echo "Fatal Error"; exit $code; fi'
   wait_cmd ${GATEWAY_POD} "tar zcf" ${KUBECTL_ARGS}
+  brlog "INFO" "Transfering archive..."
   kube_cp_to_local ${GATEWAY_POD} "${BACKUP_FILE}" "/tmp/${WDDATA_BACKUP}" ${KUBECTL_ARGS}
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c "rm -f /tmp/${WDDATA_BACKUP}"
-  echo "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Verifying backup..."
+  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
+  brlog "INFO" "Done: ${BACKUP_FILE}"
 fi
 
 #restore wddata
@@ -61,20 +67,22 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
-    echo "Nothing to Restore"
+    brlog "WARN" "no such file: ${BACKUP_FILE}"
+    brlog "WARN" "Nothing to Restore"
     echo
     exit 1
   fi
-  echo "Start restore wddata: ${BACKUP_FILE}"
+  brlog "INFO" "Start restore wddata: ${BACKUP_FILE}"
+  brlog "INFO" "Transfering archive..."
   kube_cp_from_local ${GATEWAY_POD} "${BACKUP_FILE}" "/tmp/${WDDATA_BACKUP}" ${KUBECTL_ARGS}
+  brlog "INFO" "Restoring data..."
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} -- bash -c "tar xf /tmp/${WDDATA_BACKUP} --exclude *.lck ; rm -f /tmp/${WDDATA_BACKUP}"
   wait_cmd ${GATEWAY_POD} "tar xf" ${KUBECTL_ARGS}
-  echo "Restore Done"
-  echo "Applying updates"
+  brlog "INFO" "Restore Done"
+  brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   wddata_updates
-  echo "Completed Updates"
+  brlog "INFO" "Completed Updates"
   echo
 fi
 

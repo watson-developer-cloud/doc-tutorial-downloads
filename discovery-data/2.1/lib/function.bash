@@ -1,3 +1,29 @@
+export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
+case "${BACKUP_RESTORE_LOG_LEVEL}" in
+  "ERROR") export LOG_LEVEL_NUM=0;;
+  "WARN")  export LOG_LEVEL_NUM=1;;
+  "INFO")  export LOG_LEVEL_NUM=2;;
+  "DEBUG") export LOG_LEVEL_NUM=3;;
+esac
+
+brlog(){
+  LOG_LEVEL=$1
+  shift
+  LOG_MESSAGE=$1
+  shift
+  LOG_DATE=`date "+%Y/%m/%d %H:%M:%S"`
+  case ${LOG_LEVEL} in
+    ERROR) LEVEL_NUM=0;;
+    WARN)  LEVEL_NUM=1;;
+    INFO)  LEVEL_NUM=2;;
+    DEBUG) LEVEL_NUM=3;;
+    *)     return;;
+  esac
+  if [ ${LEVEL_NUM} -le ${LOG_LEVEL_NUM} ] ; then
+    echo "${LOG_DATE}: [${LOG_LEVEL}] ${LOG_MESSAGE}"
+  fi
+}
+
 get_stat_command(){
   if [ "$(uname)" = "Darwin" ] ; then
     echo 'stat -f="%z"'

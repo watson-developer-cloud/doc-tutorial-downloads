@@ -38,7 +38,8 @@ do
   esac
 done
 
-echo "Release name: $RELEASE_NAME"
+brlog "INFO" "MinIO:"
+brlog "INFO" "Release name: $RELEASE_NAME"
 
 MINIO_SVC=`kubectl ${KUBECTL_ARGS} get svc -l release=${RELEASE_NAME},helm.sh/chart=minio -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep headless`
 MINIO_PORT=`kubectl ${KUBECTL_ARGS} get svc ${MINIO_SVC} -o jsonpath="{.spec.ports[0].port}"`
@@ -61,7 +62,8 @@ export MINIO_CONFIG_DIR=${TMP_WORK_DIR}/.mc
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"minio_`date "+%Y%m%d_%H%M%S"`.tar.gz"}
-  echo "Start backup minio..."
+  brlog "INFO" "Start backup minio"
+  brlog "INFO" "Backup data..."
   start_minio_port_forward
   ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   EXCLUDE_OBJECTS=`cat "${ROOT_DIR_MINIO}/src/minio_exclude_paths"`
@@ -82,8 +84,14 @@ if [ "${COMMAND}" = "backup" ] ; then
     cd - > /dev/null
   done
   stop_minio_port_forward
+  brlog "INFO" "Archiving data..."
   tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
-  echo "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Verifying backup..."
+  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
+  brlog "INFO" "Done: ${BACKUP_FILE}"
 fi
 
 # restore
@@ -92,13 +100,15 @@ if [ "${COMMAND}" = "restore" ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}" >&2
-    echo "Nothing to Restore" >&2
+    brlog "WARN" "no such file: ${BACKUP_FILE}"
+    brlog "WARN" "Nothing to Restore"
     echo
     exit 1
   fi
-  echo "Start restore minio: ${BACKUP_FILE}"
+  brlog "INFO" "Start restore minio: ${BACKUP_FILE}"
+  brlog "INFO" "Extracting archive..."
   tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
+  brlog "INFO" "Restoring data..."
   start_minio_port_forward
   ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   for bucket in `ls ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}`
@@ -109,11 +119,11 @@ if [ "${COMMAND}" = "restore" ] ; then
     fi
   done
   stop_minio_port_forward
-  echo "Done"
-  echo "Applying updates"
+  brlog "INFO" "Done"
+  brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   minio_updates
-  echo "Completed Updates"
+  brlog "INFO" "Completed Updates"
   echo
 fi
 

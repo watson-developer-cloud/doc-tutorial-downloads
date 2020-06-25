@@ -8,6 +8,7 @@ printUsage() {
 }
 
 SCRIPT_DIR=$(dirname $0)
+. ${SCRIPT_DIR}/lib/function.bash
 KUBECTL_ARGS=""
 
 while getopts n: OPT
@@ -47,11 +48,11 @@ sed -e "s|@image@|${PG_CONFIG_IMAGE}|g" \
 
 kubectl ${KUBECTL_ARGS} apply -f "${PG_JOB_FILE}"
 
-echo "Waiting for configuration job to be completed..."
+brlog "INFO" "Waiting for configuration job to be completed..."
 while :
 do
   if [ "`kubectl ${KUBECTL_ARGS} get job -o jsonpath='{.status.succeeded}' ${PG_JOB_NAME}`" = "1" ] ; then
-    echo "Completed postgres config job"
+    brlog "INFO" "Completed postgres config job"
     break;
   else
     sleep 5

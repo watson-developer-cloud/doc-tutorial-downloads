@@ -36,12 +36,12 @@ esac
 done
 
 if [ -d "${BACKUP_DIR}" ] ; then
-  echo "WARNING: ./${BACKUP_DIR} exists. Please remove it."
+  brlog "ERROR" "./${BACKUP_DIR} exists. Please remove it."
   exit 1
 fi
 
 if [ -d "${SPLITE_DIR}" ] ; then
-  echo "WARNING: Please remove ${SPLITE_DIR}"
+  brlog "ERROR" "Please remove ${SPLITE_DIR}"
   exit 1
 fi
 
@@ -52,15 +52,15 @@ export SCRIPT_DIR=${SCRIPT_DIR}
 
 export WD_VERSION=`get_version`
 
-echo "Scripts Version: ${SCRIPT_VERSION}"
-echo "Watson Discovery Version: ${WD_VERSION}"
+brlog "INFO" "Scripts Version: ${SCRIPT_VERSION}"
+brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
 
 if [ "${WD_VERSION}" != "${SCRIPT_VERSION}" ] ; then
-  echo "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' " >&2 
+  brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' "
   exit 1
 fi
 
-echo "Getting mc command for backup/restore of MinIO and ElasticSearch"
+brlog "INFO" "Getting mc command for backup/restore of MinIO and ElasticSearch"
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 if [ -n "${MC_COMMAND+UNDEF}" ] ; then
@@ -97,12 +97,26 @@ if [ ${COMMAND} = 'backup' ] ; then
   run
   rm -rf ${TMP_WORK_DIR}
   echo -n "${WD_VERSION}" > ${VERSION_FILE}
+  brlog "INFO" "Archiving all backup files..."
   tar zcf "${BACKUP_FILE}" "${BACKUP_DIR}"
+  brlog "INFO" "Verifying backup..."
+  BACKUP_FILES=`ls ${BACKUP_DIR}`
+  for COMP in ${ALL_COMPONENT[@]}
+  do
+    if ! echo "${BACKUP_FILES}" | grep ${COMP} > /dev/null ; then
+      brlog "ERROR" "${COMP}.backup does not exists."
+      exit 1
+    fi
+  done
+  if ! tar tvf ${BACKUP_FILE} ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
+  brlog "INFO" "Clean up"
   rm -rf "${BACKUP_DIR}"
-
   start_ingestion
   echo
-  echo "Backup Script Complete"
+  brlog "INFO" "Backup Script Complete"
   echo
 fi
 
@@ -111,7 +125,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
+    brlog "ERROR" "no such file: ${BACKUP_FILE}"
     echo
     exit 1
   fi
@@ -131,7 +145,7 @@ if [ ${COMMAND} = 'restore' ] ; then
 
   rm -rf "${BACKUP_DIR}"
 
-  echo "Restarting central pods:"
+  brlog "INFO" "Restarting central pods:"
 
   export RELEASE_NAME="mantle"
   HDP_POD=$(kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{.items[0].metadata.name}" -l "release=${RELEASE_NAME},run=hdp-worker")
@@ -140,7 +154,6 @@ if [ ${COMMAND} = 'restore' ] ; then
   CORE_PODS=$(kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{.items[*].metadata.name}" -l "release=${RELEASE_NAME},run in (gateway, management, ingestion-api)")
 
   start_ingestion
-
   kubectl delete pod ${KUBECTL_ARGS} ${CORE_PODS} ${HDP_POD}
 
   RANKER_MASTER_PODS=$(kubectl ${KUBECTL_ARGS} get pods -l component=master -o jsonpath="{.items[*].metadata.name}")
@@ -149,6 +162,6 @@ if [ ${COMMAND} = 'restore' ] ; then
   ${SCRIPT_DIR}/post-restore.sh ${RELEASE_NAME}
 
   echo
-  echo "Restore Script Complete"
+  brlog "INFO" "Restore Script Complete"
   echo
 fi

@@ -9,6 +9,7 @@ printUsage() {
 
 SCRIPT_DIR=$(dirname $0)
 KUBECTL_ARGS=""
+. ${SCRIPT_DIR}/lib/function.bash
 
 while getopts n: OPT
 do
@@ -26,6 +27,8 @@ PG_JOB_FILE="${SCRIPT_DIR}/src/postgres-config-job.yml"
 ADMIN_RELEASE_NAME="admin"
 PG_RELEASE_NAME="crust"
 JOB_RELEASE_NAME="crust"
+
+brlog "INFO" "Start postgresql configuration"
 
 PG_CONFIG_IMAGE=`kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{..image}" |tr -s '[[:space:]]' '\n' | sort | uniq | grep training-data-crud`
 PG_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${PG_RELEASE_NAME},app.kubernetes.io/component=postgresql -o jsonpath="{.items[0].metadata.name}"`
@@ -45,11 +48,11 @@ sed -e "s|@image@|${PG_CONFIG_IMAGE}|g" \
 
 kubectl ${KUBECTL_ARGS} apply -f "${PG_JOB_FILE}"
 
-echo "Waiting for configuration job to be completed..."
+brlog "INFO" "Waiting for configuration job to be completed..."
 while :
 do
   if [ "`kubectl ${KUBECTL_ARGS} get job -o jsonpath='{.status.succeeded}' ${PG_JOB_NAME}`" = "1" ] ; then
-    echo "Completed postgres config job"
+    brlog "INFO" "Completed postgres config job"
     break;
   else
     sleep 5
@@ -57,3 +60,5 @@ do
 done
 
 kubectl ${KUBECTL_ARGS} delete job ${PG_JOB_NAME}
+
+brlog "INFO" "Done postgresql configuration"
