@@ -24,6 +24,8 @@ fi
 SCRIPT_DIR=$(dirname $0)
 KUBECTL_ARGS=""
 
+. ${SCRIPT_DIR}/lib/function.bash
+
 RELEASE_NAME=$1
 shift
 while getopts n: OPT
@@ -38,18 +40,18 @@ export ETCD_RELEASE_NAME="crust"
 export SCRIPT_DIR=${SCRIPT_DIR}
 ORG_KUBECTL_ARGS=${KUBECTL_ARGS}
 
-echo "Running post restore scripts"
+brlog "INFO" "Running post restore scripts"
 
 GATEWAY_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},run=gateway`
 INGESTION_API_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},run=ingestion-api`
 
-echo "Waiting for central pods to be ready..."
+brlog "INFO" "Waiting for central pods to be ready..."
 while :
 do
   if kubectl describe pod ${KUBECTL_ARGS} -l release=${RELEASE_NAME},run=orchestrator | grep -e "ContainersReady.*False" -e "PodScheduled.*False" > /dev/null ; then
     sleep 5;
   else
-    echo "Central pods are ready";
+    brlog "INFO" "Central pods are ready";
     break;
   fi
 done
@@ -63,17 +65,17 @@ export ZING_PORT=9463
 export KUBECTL_ARGS="${KUBECTL_ARGS} -c nginx"
 
 if [ "${WD_VERSION}" != "${BACKUP_FILE_VERSION}" ] ; then
-  echo "Submitting rebuild datasets of Content Miner projects"
+  brlog "INFO" "Submitting rebuild datasets of Content Miner projects"
   runPythonScripts ${GATEWAY_POD} rebuild_cm_projects.py
-  echo "Completing submitting rebuild datasets of Content Miner projects. It will be rebuilt soon."
+  brlog "INFO" "Completing submitting rebuild datasets of Content Miner projects. It will be rebuilt soon."
 fi
 
 if [ "${WD_VERSION}" != "${BACKUP_FILE_VERSION}" ] ; then
-  echo "Rebuild all collections."
+  brlog "INFO" "Rebuild all collections."
   runPythonScripts ${GATEWAY_POD} rebuild_collections.py
-  echo "Completed submitting the requsts of rebuild collections. They will be rebuilt soon."
+  brlog "INFO" "Completed submitting the requsts of rebuild collections. They will be rebuilt soon."
 fi
 
-echo "Completed post restore scripts"
+brlog "INFO" "Completed post restore scripts"
 
 export KUBECTL_ARGS=${ORG_KUBECTL_ARGS}

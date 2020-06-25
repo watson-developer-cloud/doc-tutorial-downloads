@@ -24,6 +24,7 @@ if [ $# -lt 1 ] ; then
 fi
 
 SCRIPT_DIR=$(dirname $0)
+. ${SCRIPT_DIR}/lib/function.bash
 KUBECTL_ARGS=""
 
 RELEASE_NAME=$1
@@ -39,17 +40,17 @@ export RELEASE_NAME=${RELEASE_NAME}
 export SCRIPT_DIR=${SCRIPT_DIR}
 ORG_KUBECTL_ARGS=${KUBECTL_ARGS}
 
-echo "Running post restore scripts"
+brlog "INFO" "Running post restore scripts"
 
 GATEWAY_POD=` kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},run=gateway`
 
-echo "Waiting for central pods to be ready..."
+brlog "INFO" "Waiting for central pods to be ready..."
 while :
 do
   if kubectl describe pod ${KUBECTL_ARGS} -l release=${RELEASE_NAME},run=orchestrator | grep -e "ContainersReady.*False" > /dev/null ; then
     sleep 5;
   else
-    echo "Central pods are ready";
+    brlog "INFO" "Central pods are ready";
     break;
   fi
 done
@@ -70,15 +71,15 @@ fi
 # runPythonScripts ${GATEWAY_POD} delete_sample_project.py
 # echo "Complete deleting Sample Project. It will be recreated soon."
 
-echo "Submitting rebuild datasets of Content Miner projects"
+brlog "INFO" "Submitting rebuild datasets of Content Miner projects"
 runPythonScripts ${GATEWAY_POD} rebuild_cm_projects.py
-echo "Completing submitting rebuild datasets of Content Miner projects. It will be rebuilt soon."
+brlog "INFO" "Completing submitting rebuild datasets of Content Miner projects. It will be rebuilt soon."
 
-echo "Updating crawler configuration"
+brlog "INFO" "Updating crawler configuration"
 ## update crawler configuration
 runPythonScripts ${GATEWAY_POD} update_crawler_conf.py
-echo "Completed updating crawler configuration"
+brlog "INFO" "Completed updating crawler configuration"
 
-echo "Completed post restore scripts"
+brlog "INFO" "Completed post restore scripts"
 
 export KUBECTL_ARGS=${ORG_KUBECTL_ARGS}

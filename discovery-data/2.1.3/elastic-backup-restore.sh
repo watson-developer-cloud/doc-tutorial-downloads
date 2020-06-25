@@ -44,18 +44,18 @@ do
   esac
 done
 
-echo "Elastic: "
-echo "Release name: $RELEASE_NAME"
+brlog "INFO" "Elastic: "
+brlog "INFO" "Release name: $RELEASE_NAME"
 
 ELASTIC_POD=""
 
 # Check whether data node exists. If exists, this is WD 2.1.2 or later, and perform backup/restore on data node.
 # If not, use elastic pod.
 if [ `kubectl get pods ${KUBECTL_ARGS} -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=data | grep -c "^" || true` != '0' ] ; then
-  echo 'ElasticSearch data nodes exist. Backup/Restore will be performed on them.'
+  brlog "INFO" 'ElasticSearch data nodes exist. Backup/Restore will be performed on them.'
   ELASTIC_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=data`
 else
-  echo "ElasticSearch data nodes do not exist. Backup/Restore will be performed on normal ElasticSearch pod."
+  brlog "INFO" "ElasticSearch data nodes do not exist. Backup/Restore will be performed on normal ElasticSearch pod."
   ELASTIC_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},helm.sh/chart=elastic`
 fi
 
@@ -79,34 +79,43 @@ export MINIO_CONFIG_DIR=${TMP_WORK_DIR}/.mc
 # backup elastic search
 if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"elastic_`date "+%Y%m%d_%H%M%S"`.snapshot"}
-  echo "Start backup elasticsearch..."
+  brlog "INFO" "Start backup elasticsearch..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
   start_minio_port_forward
   ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
+  brlog "INFO" "Taking snapshot..."
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
   export ELASTIC_ENDPOINT="http://localhost:${ES_PORT}" && \
   S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}" && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?wait_for_completion=true&master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d'"'"'{"indices": "*","ignore_unavailable": true,"include_global_state": false}'"'"
-  wait_cmd ${ELASTIC_POD} "S3_IP=" ${KUBECTL_ARGS}
+  wait_cmd ${ELASTIC_POD} "curl -XPUT -s -k -u" ${KUBECTL_ARGS}
   echo
-  echo "Getting backup from MinIO"
+  brlog "INFO" "Transfering snapshot from MinIO"
   start_minio_port_forward
   ${MC} --quiet --insecure mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} > /dev/null
   stop_minio_port_forward
+  brlog "INFO" "Archiving sanpshot..."
   tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
+  brlog "INFO" "Clean up"
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
   export ELASTIC_ENDPOINT="http://localhost:${ES_PORT}" && \
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'"'
   wait_cmd ${ELASTIC_POD} "curl -XDELETE -s -k -u" ${KUBECTL_ARGS}
+  echo
   start_minio_port_forward
   ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
+  brlog "INFO" "Verifying backup..."
+  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
   echo
-  echo "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Done: ${BACKUP_FILE}"
 fi
 
 if [ ${COMMAND} = 'restore' ] ; then
@@ -114,8 +123,8 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
-    echo "Nothing to Restore"
+    brlog "WARN" "no such file: ${BACKUP_FILE}"
+    brlog "WARN" "Nothing to Restore"
     echo
     exit 1
   fi
@@ -124,8 +133,10 @@ if [ ${COMMAND} = 'restore' ] ; then
   ELASTIC_RESOURCE=`kubectl get ${ELASTIC_CLIENT_TYPE} ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=client`
   ELASTIC_REPLICAS=`kubectl get ${ELASTIC_CLIENT_TYPE} ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${RELEASE_NAME},helm.sh/chart=elastic,role=client`
 
+  brlog "INFO" "Extracting Archive..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
+  brlog "INFO" "Transfering data to MinIO..."
   start_minio_port_forward
   ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
@@ -135,6 +146,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   scale_resource ${ELASTIC_CLIENT_TYPE} ${ELASTIC_RESOURCE} 0 true
   trap "scale_resource ${ELASTIC_CLIENT_TYPE} ${ELASTIC_RESOURCE} ${ELASTIC_REPLICAS} false"  0 1 2 3 15
 
+  brlog "INFO" "Restoring snapshot..."
   kubectl ${KUBECTL_ARGS} exec ${ELASTIC_POD} -- bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
   export ELASTIC_ENDPOINT="http://localhost:${ES_PORT}" && \
   S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
@@ -145,20 +157,22 @@ if [ ${COMMAND} = 'restore' ] ; then
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"'
-  wait_cmd ${ELASTIC_POD} "curl -XPUT" ${KUBECTL_ARGS}
+  wait_cmd ${ELASTIC_POD} "curl -X" ${KUBECTL_ARGS}
+  echo
 
   scale_resource ${ELASTIC_CLIENT_TYPE} ${ELASTIC_RESOURCE} ${ELASTIC_REPLICAS} false
   trap 0 1 2 3 15
 
+  brlog "INFO" "Clean up"
   start_minio_port_forward
   ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
   echo 
-  echo "Restore Done"
-  echo "Applying updates"
+  brlog "INFO" "Restore Done"
+  brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   elastic_updates
-  echo "Completed Updates"
+  brlog "INFO" "Completed Updates"
   echo
 fi
 

@@ -16,6 +16,7 @@ if [ $# -lt 2 ] ; then
 fi
 
 SCRIPT_DIR=$(dirname $0)
+. ${SCRIPT_DIR}/lib/function.bash
 
 COMMAND=$1
 shift
@@ -32,12 +33,12 @@ done
 ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
 
 if [ -d "${BACKUP_DIR}" ] ; then
-  echo "WARNING: ./${BACKUP_DIR} exists. Please remove it."
+  brlog "ERROR" "./${BACKUP_DIR} exists. Please remove it."
   exit 1
 fi
 
 if [ -d "${SPLITE_DIR}" ] ; then
-  echo "WARNING: Please remove ${SPLITE_DIR}"
+  brlog "ERROR" "Please remove ${SPLITE_DIR}"
   exit 1
 fi
 
@@ -77,10 +78,25 @@ if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_`date "+%Y%m%d_%H%M%S"`.backup"}
   mkdir -p "${BACKUP_DIR}"
   run
+  brlog "INFO" "Archiving all backup data..."
   tar zcf "${BACKUP_FILE}" "${BACKUP_DIR}"
+  brlog "INFO" "Verifying backup..."
+  BACKUP_FILES=`ls ${BACKUP_DIR}`
+  for COMP in ${ALL_COMPONENT[@]}
+  do
+    if ! echo "${BACKUP_FILES}" | grep ${COMP} > /dev/null ; then
+      brlog "ERROR" "${COMP}.backup does not exists."
+      exit 1
+    fi
+  done
+  if ! tar tvf ${BACKUP_FILE} ; then
+    brlog "ERROR" "Backup file is broken, or does not exist."
+    exit 1
+  fi
+  brlog "INFO" "Clean up"
   rm -rf "${BACKUP_DIR}"
   echo
-  echo "Backup Script Complete"
+  brlog "INFO" "Backup Script Complete"
   echo
 fi
 
@@ -89,7 +105,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
+    brlog "ERROR" "no such file: ${BACKUP_FILE}"
     echo
     exit 1
   fi
@@ -104,9 +120,9 @@ if [ ${COMMAND} = 'restore' ] ; then
     ORG_INGESTION_POD_NUM=1
   fi
   trap "kubectl ${KUBECTL_ARGS} scale sts ${INGESTION_RESOURCE_NAME} --replicas=${ORG_INGESTION_POD_NUM}" 0 1 2 3 15
-  echo "Change replicas of ${INGESTION_RESOURCE_NAME} to 0".
+  brlog "INFO" "Change replicas of ${INGESTION_RESOURCE_NAME} to 0".
   kubectl ${KUBECTL_ARGS} scale sts ${INGESTION_RESOURCE_NAME} --replicas=0
-  echo "Waiting for ${INGESTION_RESOURCE_NAME} to be scaled..."
+  brlog "INFO" "Waiting for ${INGESTION_RESOURCE_NAME} to be scaled..."
   while :
   do
     if [ `kubectl get pod ${KUBECTL_ARGS} -l release=${INGESTION_RELEASE_NAME},run=ingestion | grep -c "^" || true` = '0' ] ; then
@@ -115,13 +131,13 @@ if [ ${COMMAND} = 'restore' ] ; then
       sleep 1
     fi
   done
-  echo "Complete scale."
-
+  brlog "INFO" "Complete scale."
+  brlog "INFO" "Extracting backup archive..."
   tar xf "${BACKUP_FILE}"
   run
   rm -rf "${BACKUP_DIR}"
 
-  echo "Restarting central pods:"
+  brlog "INFO" "Restarting central pods:"
 
   if "${IS_SEQ_INS}" ; then
     export RELEASE_NAME="substrate"
@@ -141,14 +157,13 @@ if [ ${COMMAND} = 'restore' ] ; then
   kubectl delete pod ${KUBECTL_ARGS} ${RANKER_MASTER_PODS}
 
   echo
-
-  echo "Restore replicas of ${INGESTION_RESOURCE_NAME}"
+  brlog "INFO" "Restore replicas of ${INGESTION_RESOURCE_NAME}"
   kubectl ${KUBECTL_ARGS} scale sts ${INGESTION_RESOURCE_NAME} --replicas=${ORG_INGESTION_POD_NUM}
   trap 0 1 2 3 15
 
   ./post-restore.sh ${RELEASE_NAME}
 
   echo
-  echo "Restore Script Complete"
+  brlog "INFO" "Restore Script Complete"
   echo
 fi

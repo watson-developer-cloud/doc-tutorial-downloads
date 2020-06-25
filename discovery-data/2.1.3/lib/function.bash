@@ -1,3 +1,29 @@
+export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
+case "${BACKUP_RESTORE_LOG_LEVEL}" in
+  "ERROR") export LOG_LEVEL_NUM=0;;
+  "WARN")  export LOG_LEVEL_NUM=1;;
+  "INFO")  export LOG_LEVEL_NUM=2;;
+  "DEBUG") export LOG_LEVEL_NUM=3;;
+esac
+
+brlog(){
+  LOG_LEVEL=$1
+  shift
+  LOG_MESSAGE=$1
+  shift
+  LOG_DATE=`date "+%Y/%m/%d %H:%M:%S"`
+  case ${LOG_LEVEL} in
+    ERROR) LEVEL_NUM=0;;
+    WARN)  LEVEL_NUM=1;;
+    INFO)  LEVEL_NUM=2;;
+    DEBUG) LEVEL_NUM=3;;
+    *)     return;;
+  esac
+  if [ ${LEVEL_NUM} -le ${LOG_LEVEL_NUM} ] ; then
+    echo "${LOG_DATE}: [${LOG_LEVEL}] ${LOG_MESSAGE}"
+  fi
+}
+
 get_version(){
   if [ -n "`kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
       echo "2.1.3"
@@ -167,29 +193,46 @@ wait_cmd(){
 get_mc(){
   DIST_DIR=$1
   if [ "$(uname)" = "Linux" ] ; then
-    echo "Getting mc command for linux-amd64."
+    brlog "INFO" "Getting mc command for linux-amd64."
     launch_migrator_job
     get_job_pod
     wait_job_running ${POD}
     kubectl cp ${KUBECTL_ARGS} ${POD}:/usr/local/bin/mc ${DIST_DIR}/mc
     kubectl ${KUBECTL_ARGS} delete job ${MIGRATOR_JOB_NAME}
     chmod +x ${DIST_DIR}/mc
+    brlog "INFO" "Got mc command: ${DIST_DIR}/mc"
   else
-    echo "Not linux os. Can not get mc. Please set your minio client path to environment variable 'MC_COMMAND'" >&2
+    brlog "ERROR" "Not linux os. Can not get mc. Please set your minio client path to environment variable 'MC_COMMAND'"
     exit 1
   fi
 }
 
 start_minio_port_forward(){
-  kubectl ${KUBECTL_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} > /dev/null &
-  PORT_FORWARD_PID=$!
-  trap "kill ${PORT_FORWARD_PID}" 0 1 2 3 15
+  touch ${TMP_WORK_DIR}/keep_minio_port_forward
+  trap "rm -f ${TMP_WORK_DIR}/keep_minio_port_forward" 0 1 2 3 15
+  keep_minio_port_forward &
   sleep 5
 }
 
+keep_minio_port_forward(){
+  while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ]
+  do
+    kubectl ${KUBECTL_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} > /dev/null &
+    PORT_FORWARD_PID=$!
+    while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ] && kill -0 ${PORT_FORWARD_PID} &> /dev/null
+    do
+      sleep 1
+    done
+  done
+  if kill -0 ${PORT_FORWARD_PID} &> /dev/null ; then
+    kill ${PORT_FORWARD_PID}
+  fi
+}
+
 stop_minio_port_forward(){
-  kill ${PORT_FORWARD_PID}
+  rm -f ${TMP_WORK_DIR}/keep_minio_port_forward
   trap 0 1 2 3 15
+  sleep 5
 }
 
 scale_resource(){
@@ -197,10 +240,10 @@ scale_resource(){
   SCALE_RESOURCE_NAME=$2
   SCALE_NUM=$3
   WAIT_SCALE=$4
-  echo "Change replicas of ${SCALE_RESOURCE_NAME} to ${SCALE_NUM}".
+  brlog "INFO" "Change replicas of ${SCALE_RESOURCE_NAME} to ${SCALE_NUM}".
   kubectl ${KUBECTL_ARGS} scale ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} --replicas=${SCALE_NUM}
   if "${WAIT_SCALE}" ; then
-    echo "Waiting for ${SCALE_RESOURCE_NAME} to be scaled..."
+    brlog "INFO" "Waiting for ${SCALE_RESOURCE_NAME} to be scaled..."
     while :
     do
       if [ "`kubectl ${KUBECTL_ARGS} get ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} -o jsonpath='{.status.replicas}'`" = "0" ] ; then
@@ -209,7 +252,7 @@ scale_resource(){
         sleep 1
       fi
     done
-    echo "Complete scale."
+    brlog "INFO" "Complete scale."
   fi
 }
 
@@ -221,7 +264,7 @@ set_release_names_for_ingestion(){
 
 start_ingestion(){
   echo
-  echo "Restore core pods"
+  brlog "INFO" "Restore core pods"
   echo
   scale_resource sts ${CRAWLER_RESOURCE_NAME} ${ORG_CRAWLER_POD_NUM} false
   scale_resource sts ${CONVERTER_RESOURCE_NAME} ${ORG_CONVERTER_POD_NUM} false
@@ -230,13 +273,13 @@ start_ingestion(){
   scale_resource deployment ${ORCHESTRATOR_RESOURCE_NAME} ${ORG_ORCHESTRATOR_POD_NUM} false
   trap 0 1 2 3 15
   echo
-  echo "Core pods will be restored soon."
+  brlog "INFO" "Core pods will be restored soon."
   echo
 }
 
 stop_ingestion(){
   echo
-  echo "Scale core pods to stop ingestion..."
+  brlog "INFO" "Scale core pods to stop ingestion..."
   echo
   set_release_names_for_ingestion
   # Scale ingestion and orchestrator pods to ensure that there are no ingestion process.
@@ -277,7 +320,7 @@ stop_ingestion(){
   HDP_RM_POD=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${HDP_RELEASE_NAME},run=hdp-rm`
 
   # Check there are no DOCPROC application in yarn cue.
-  echo "Stop all ingestion process..."
+  brlog "INFO" "Stop all ingestion process..."
   check_count=0
   while :
   do
@@ -297,7 +340,7 @@ stop_ingestion(){
   done
 
   echo
-  echo "Stopped ingestion."
+  brlog "INFO" "Stopped ingestion."
   echo
 }
 
@@ -344,7 +387,7 @@ launch_migrator_job(){
 }
 
 get_job_pod(){
-  echo "Waiting for migrator pod"
+  brlog "INFO" "Waiting for migrator pod"
   POD=""
   MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-20}
   WAIT_COUNT=0
@@ -363,7 +406,7 @@ get_job_pod(){
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      echo "Migrator pod have not been created after 100s"
+      brlog "ERROR" "Migrator pod have not been created after 100s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))
@@ -382,7 +425,7 @@ wait_job_running() {
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      echo "Migrator pod have not run after 100s"
+      brlog "ERROR" "Migrator pod have not run after 100s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))

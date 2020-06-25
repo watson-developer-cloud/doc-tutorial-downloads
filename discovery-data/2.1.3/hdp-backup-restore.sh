@@ -35,15 +35,15 @@ esac
 done
 
 
-echo "HDP: "
-echo "Release name: $RELEASE_NAME"
+brlog "INFO" "HDP: "
+brlog "INFO" "Release name: $RELEASE_NAME"
 
 HDP_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},helm.sh/chart=hdp,run=hdp-worker`
 
 # backup hadoop
 if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"hadoop_`date "+%Y%m%d_%H%M%S"`.backup"}
-  echo "Skip backup hadoop"
+  brlog "INFO" "Skip backup hadoop"
 fi
 
 # restore hadoop
@@ -52,24 +52,29 @@ if [ ${COMMAND} = 'restore' ] ; then
     printUsage
   fi
   if [ ! -e "${BACKUP_FILE}" ] ; then
-    echo "no such file: ${BACKUP_FILE}"
-    echo "Nothing to Restore"
+    brlog "WARN" "no such file: ${BACKUP_FILE}"
+    brlog "WARN" "Nothing to Restore"
     echo
     exit 1
   fi
-  echo "Start restore hadoop: ${BACKUP_FILE}"
+  brlog "INFO" "Start restore hadoop: ${BACKUP_FILE}"
+  brlog "INFO" "Transfering archive..."
   kube_cp_from_local ${HDP_POD} "${BACKUP_FILE}" "${HDP_BACKUP}" ${KUBECTL_ARGS} -c hdp-worker
+  brlog "INFO" "Extracting archive..."
   kubectl exec -c hdp-worker ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \
   rm -rf ${HDP_BACKUP_DIR}/* && \
-  tar xf ${HDP_BACKUP} && \
+  tar xf ${HDP_BACKUP}"
+  wait_cmd ${HDP_POD} "tar xf" ${KUBECTL_ARGS} -c hdp-worker
+  brlog "INFO" "Restoring data..."
+  kubectl exec -c hdp-worker ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \
   hdfs dfs -rm -r '/*' > /dev/null && \
   hdfs dfs -copyFromLocal ${HDP_BACKUP_DIR}/* / > /dev/null && \
   rm -rf ${HDP_BACKUP} ${HDP_BACKUP_DIR}"
   wait_cmd ${HDP_POD} "hdfs dfs -copyFromLocal" ${KUBECTL_ARGS} -c hdp-worker
-  echo "Done"
-  echo "Applying updates"
+  brlog "INFO" "Done"
+  brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   hdp_updates
-  echo "Completed Updates"
+  brlog "INFO" "Completed Updates"
   echo
 fi
