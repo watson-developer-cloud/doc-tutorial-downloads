@@ -1,0 +1,2 @@
+The Backup and Restore Scripts for the Watson Discovery on CP4D.
+Scripts Version: 2.1.2.1

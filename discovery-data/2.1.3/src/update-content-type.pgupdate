@@ -1,0 +1,4 @@
+export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \
+export PGPASSWORD=${PGPASSWORD:-`cat ${STKEEPER_PG_SU_PASSWORDFILE}`} && \
+export PGHOST=${PGHOST:-localhost} && \
+psql -d dadmin -c "UPDATE source_documents SET media_type = 'application/octet-stream' WHERE media_type = 'application/vnd.ms-excel'"

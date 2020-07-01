@@ -4,10 +4,9 @@ set -e
 
 BACKUP_ARGS=""
 BACKUP_DIR="tmp"
-VERSION_FILE="tmp/version.txt"
+BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
 SPLITE_DIR=./tmp_split_bakcup
-SCRIPT_VERSION="2.1.3"
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
@@ -21,6 +20,12 @@ fi
 SCRIPT_DIR=$(dirname $0)
 
 . ${SCRIPT_DIR}/lib/function.bash
+
+set_scripts_version
+export WD_VERSION=`get_version`
+brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
+validate_version
+
 
 COMMAND=$1
 shift
@@ -50,15 +55,6 @@ export RELEASE_NAME=${RELEASE_NAME}
 export BACKUP_ARGS=${BACKUP_ARGS}
 export SCRIPT_DIR=${SCRIPT_DIR}
 
-export WD_VERSION=`get_version`
-
-brlog "INFO" "Scripts Version: ${SCRIPT_VERSION}"
-brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
-
-if [ "${WD_VERSION}" != "${SCRIPT_VERSION}" ] ; then
-  brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' "
-  exit 1
-fi
 
 brlog "INFO" "Getting mc command for backup/restore of MinIO and ElasticSearch"
 rm -rf ${TMP_WORK_DIR}
@@ -96,7 +92,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   mkdir -p "${BACKUP_DIR}"
   run
   rm -rf ${TMP_WORK_DIR}
-  echo -n "${WD_VERSION}" > ${VERSION_FILE}
+  echo -n "${WD_VERSION}" > ${BACKUP_VERSION_FILE}
   brlog "INFO" "Archiving all backup files..."
   tar zcf "${BACKUP_FILE}" "${BACKUP_DIR}"
   brlog "INFO" "Verifying backup..."

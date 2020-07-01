@@ -24,6 +24,35 @@ brlog(){
   fi
 }
 
+set_scripts_version(){
+  if [ -n "${SCRIPTS_VERSION+UNDEF}" ] ; then
+    return
+  fi
+  SCRIPT_VERSION_FILE="${SCRIPT_DIR}/version.txt"
+  if [ ! -e "${SCRIPT_VERSION_FILE}" ] ; then
+    brlog "INFO" "No version file."
+    return
+  fi
+
+  ORG_IFS=${IFS}
+  IFS=$'\n'
+  for line in `cat "${SCRIPT_VERSION_FILE}"`
+  do
+    brlog "INFO" "${line}"
+    if [[ ${line} == "Scripts Version:"* ]] ; then
+      export SCRIPT_VERSION="${line#*: }"
+    fi
+  done
+  IFS=${ORG_IFS}
+}
+
+validate_version(){
+  if [[ ${SCRIPT_VERSION} != ${WD_VERSION}* ]] ; then
+    brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' "
+    exit 1
+  fi
+}
+
 get_version(){
   if [ -n "`kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
       echo "2.1.3"
@@ -35,8 +64,8 @@ get_version(){
 }
 
 get_backup_version(){
-  if [ -e "${VERSION_FILE}" ] ; then
-    cat "${VERSION_FILE}"
+  if [ -e "${BACKUP_VERSION_FILE}" ] ; then
+    cat "${BACKUP_VERSION_FILE}"
   else
     echo "2.1" # 2.1.2 or earlier
   fi

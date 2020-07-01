@@ -17,13 +17,8 @@ PG_SERVICE_FILE="${ETCD_BACKUP_DIR}/pg_service_name.txt"
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
-  echo "Env: WD_VERSION - The version of Watson Discovery. ex) '2.1.3'"
   exit 1
 }
-
-if [ $# -lt 2 -o ! -n "${WD_VERSION+UNDEF}" ] ; then
-  printUsage
-fi
 
 COMMAND=$1
 shift
