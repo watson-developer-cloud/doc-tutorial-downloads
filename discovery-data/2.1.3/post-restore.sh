@@ -56,7 +56,7 @@ do
   fi
 done
 
-if [ "${WD_VERSION}" != "${BACKUP_FILE_VERSION}" ] ; then
+if [ `compare_version "${BACKUP_FILE_VERSION}" 2.1.2` -le 0 ] ; then
   ${SCRIPT_DIR}/src/update-stats.sh ${ETCD_RELEASE_NAME}
 fi
 
@@ -64,13 +64,13 @@ export MANAGEMENT_PORT=9443
 export ZING_PORT=9463
 export KUBECTL_ARGS="${KUBECTL_ARGS} -c nginx"
 
-if [ "${WD_VERSION}" != "${BACKUP_FILE_VERSION}" ] ; then
+if [ `compare_version "${BACKUP_FILE_VERSION}" 2.1.2` -le 0 ] ; then
   brlog "INFO" "Submitting rebuild datasets of Content Miner projects"
   runPythonScripts ${GATEWAY_POD} rebuild_cm_projects.py
   brlog "INFO" "Completing submitting rebuild datasets of Content Miner projects. It will be rebuilt soon."
 fi
 
-if [ "${WD_VERSION}" != "${BACKUP_FILE_VERSION}" ] ; then
+if [ `compare_version "${BACKUP_FILE_VERSION}" 2.1.2` -le 0 ] ; then
   brlog "INFO" "Rebuild all collections."
   runPythonScripts ${GATEWAY_POD} rebuild_collections.py
   brlog "INFO" "Completed submitting the requsts of rebuild collections. They will be rebuilt soon."

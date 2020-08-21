@@ -82,7 +82,7 @@ run () {
 stop_ingestion
 
 if [ ${COMMAND} = 'backup' ] ; then
-  if [ "${WD_VERSION}" = "2.1.3" ] ; then
+  if [  `compare_version "${WD_VERSION}" "2.1.3"` -ge 0 ] ; then
     ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
   else
     ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
@@ -129,13 +129,13 @@ if [ ${COMMAND} = 'restore' ] ; then
   tar xf "${BACKUP_FILE}"
   export BACKUP_FILE_VERSION=`get_backup_version`
   ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
-  if [ "${BACKUP_FILE_VERSION}" = "2.1.3" ] ; then
+  if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.3"` -ge 0 ] ; then
     ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
   fi
   export ALL_COMPONENT=${ALL_COMPONENT}
   run
 
-  if [ "${BACKUP_FILE_VERSION}" != "${WD_VERSION}" ] ; then 
+  if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.2"` -le 0 ] ; then 
     ${SCRIPT_DIR}/run-migrator.sh "${BACKUP_DIR}/wddata.backup" ${BACKUP_ARGS}
   fi
 
@@ -149,8 +149,10 @@ if [ ${COMMAND} = 'restore' ] ; then
   export RELEASE_NAME="core"
   CORE_PODS=$(kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{.items[*].metadata.name}" -l "release=${RELEASE_NAME},run in (gateway, management, ingestion-api)")
 
+  CNM_POD=$(kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{.items[*].metadata.name}" -l "release=${RELEASE_NAME},app=cnm-api")
+
   start_ingestion
-  kubectl delete pod ${KUBECTL_ARGS} ${CORE_PODS} ${HDP_POD}
+  kubectl delete pod ${KUBECTL_ARGS} ${CORE_PODS} ${HDP_POD} ${CNM_POD}
 
   RANKER_MASTER_PODS=$(kubectl ${KUBECTL_ARGS} get pods -l component=master -o jsonpath="{.items[*].metadata.name}")
   kubectl delete pod ${KUBECTL_ARGS} ${RANKER_MASTER_PODS}

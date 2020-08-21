@@ -12,7 +12,7 @@ elastic_updates(){
       kubectl ${KUBECTL_ARGS} exec ${ELASTIC_POD} -- bash -c "${value}"
     done
   fi
-  if [ "${BACKUP_FILE_VERSION}" != "${WD_VERSION}" ] ; then 
+  if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.2"` -le 0 ] ; then 
     if ls "$UPDATE_DIR"/*.elupdate_script &> /dev/null ; then
       for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate_script; do
         UPDATE_SCRIPT_NAME=$(basename ${ELASTIC_COMMAND})
