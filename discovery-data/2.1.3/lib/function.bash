@@ -25,13 +25,13 @@ brlog(){
 }
 
 set_scripts_version(){
-  if [ -n "${SCRIPTS_VERSION+UNDEF}" ] ; then
+  if [ -n "${SCRIPT_VERSION+UNDEF}" ] ; then
     return
   fi
   SCRIPT_VERSION_FILE="${SCRIPT_DIR}/version.txt"
   if [ ! -e "${SCRIPT_VERSION_FILE}" ] ; then
     brlog "INFO" "No version file."
-    return
+    export SCRIPT_VERSION="0.0.0"
   fi
 
   ORG_IFS=${IFS}
@@ -47,7 +47,9 @@ set_scripts_version(){
 }
 
 validate_version(){
-  if [[ ${SCRIPT_VERSION} != ${WD_VERSION}* ]] ; then
+  VERSIONS=(${SCRIPT_VERSION//./ })
+  VERSION="${VERSIONS[0]}.${VERSIONS[1]}.${VERSIONS[2]}"
+  if [ `compare_version "${VERSION}" "${WD_VERSION}"` -lt 0 ] ; then
     brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' "
     exit 1
   fi
@@ -55,11 +57,37 @@ validate_version(){
 
 get_version(){
   if [ -n "`kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
+    if [ "`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
       echo "2.1.3"
+    else
+      echo "2.1.4"
+    fi
   elif [ -n "`kubectl get sts ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=gateway" -o jsonpath="{..image}" | grep "wd-management"`" ] ; then
     echo "2.1.2"
   else
     echo "2.1"
+  fi
+}
+
+get_version_num(){
+  case "$1" in
+    "2.1") echo 1;;
+    "2.1.2") echo 2;;
+    "2.1.3") echo 3;;
+    "2.1.4") echo 4;;
+    *)     echo 0;;
+  esac
+}
+
+compare_version(){
+  VER_1=`get_version_num "$1"`
+  VER_2=`get_version_num "$2"`
+  if [ ${VER_1} -lt ${VER_2} ] ; then
+    echo "-1"
+  elif [ ${VER_1} -eq ${VER_2} ] ; then
+    echo 0
+  else
+    echo 1
   fi
 }
 
@@ -385,8 +413,9 @@ launch_migrator_job(){
   MIGRATOR_MEMORY_LIMITS="${MIGRATOR_MEMORY_LIMITS:-4Gi}"
   MIGRATOR_MAX_HEAP="${MIGRATOR_MAX_HEAP:-3g}"
 
-  WD_UTIL_IMAGE=`kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{..image}" |tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils`
-  WD_MIGRATOR_IMAGE="${WD_UTIL_IMAGE%wd-utils*}wd-migrator:${MIGRATOR_TAG}"
+  WD_MIGRATOR_REPO=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.dockerImageRepository}"`
+  WD_MIGRATOR_TAG=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`
+  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
   PG_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=postgresql -o jsonpath="{.items[0].metadata.name}"`
   PG_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME},helm.sh/chart=postgresql -o jsonpath="{.items[*].metadata.name}"`
   ETCD_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=etcd -o jsonpath="{.items[0].metadata.name}"`

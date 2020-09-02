@@ -30,7 +30,9 @@ JOB_RELEASE_NAME="crust"
 
 brlog "INFO" "Start postgresql configuration"
 
-PG_CONFIG_IMAGE=`kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{..image}" |tr -s '[[:space:]]' '\n' | sort | uniq | grep training-data-crud`
+PG_CONFIG_REPO=`kubectl ${KUBECTL_ARGS} get is configure-postgres -o jsonpath="{.status.dockerImageRepository}"`
+PG_CONFIG_TAG=`kubectl ${KUBECTL_ARGS} get is configure-postgres -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`
+PG_CONFIG_IMAGE="${PG_CONFIG_REPO}:${PG_CONFIG_TAG}"
 PG_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${PG_RELEASE_NAME},app.kubernetes.io/component=postgresql -o jsonpath="{.items[0].metadata.name}"`
 PG_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${PG_RELEASE_NAME},helm.sh/chart=postgresql -o jsonpath="{.items[*].metadata.name}"`
 NAMESPACE=${NAMESPACE:-`kubectl config view --minify --output 'jsonpath={..namespace}'`}
@@ -43,7 +45,6 @@ sed -e "s|@image@|${PG_CONFIG_IMAGE}|g" \
   -e "s/@release@/${JOB_RELEASE_NAME}/g" \
   -e "s/@namespace@/${NAMESPACE}/g" \
   -e "s/@service-account@/${SERVICE_ACCOUNT}/g" \
-  -e "s/training-data-crud/configure-postgres/g" \
   "${PG_JOB_TEMPLATE}" > "${PG_JOB_FILE}"
 
 kubectl ${KUBECTL_ARGS} apply -f "${PG_JOB_FILE}"
