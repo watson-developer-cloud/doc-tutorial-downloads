@@ -424,6 +424,7 @@ launch_migrator_job(){
   MINIO_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=minio -o jsonpath="{.items[0].metadata.name}"`
   MINIO_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME} -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep minio`
   DISCO_SVC_ACCOUNT=`kubectl ${KUBECTL_ARGS} get serviceaccount -l release=${ADMIN_RELEASE_NAME} -o jsonpath="{.items[*].metadata.name}"`
+  SDU_SVC=`kubectl get ${KUBECTL_ARGS} configmap core-discovery-gateway -o jsonpath='{.data.SDU_SVC}'`
   NAMESPACE=${NAMESPACE:-`kubectl config view --minify --output 'jsonpath={..namespace}'`}
 
   sed -e "s/@namespace@/${NAMESPACE}/g" \
@@ -439,6 +440,7 @@ launch_migrator_job(){
     -e "s/@ck-secret@/${CK_SECRET}/g" \
     -e "s/@cpu-limit@/${MIGRATOR_CPU_LIMITS}/g" \
     -e "s/@memory-limit@/${MIGRATOR_MEMORY_LIMITS}/g" \
+    -e "s/@sdu-svc@/${SDU_SVC}/g" \
     "${MIGRATOR_JOB_TEMPLATE}" > "${MIGRATOR_JOB_FILE}"
 
   kubectl ${KUBECTL_ARGS} apply -f "${MIGRATOR_JOB_FILE}"

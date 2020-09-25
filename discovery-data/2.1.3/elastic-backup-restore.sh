@@ -74,7 +74,8 @@ else
   get_mc ${TMP_WORK_DIR}
   MC=${TMP_WORK_DIR}/mc
 fi
-export MINIO_CONFIG_DIR=${TMP_WORK_DIR}/.mc
+export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
+MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
 
 # backup elastic search
 if [ ${COMMAND} = 'backup' ] ; then
@@ -82,8 +83,8 @@ if [ ${COMMAND} = 'backup' ] ; then
   brlog "INFO" "Start backup elasticsearch..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
   start_minio_port_forward
-  ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
+  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
   brlog "INFO" "Taking snapshot..."
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
@@ -95,7 +96,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   echo
   brlog "INFO" "Transfering snapshot from MinIO"
   start_minio_port_forward
-  ${MC} --quiet --insecure mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} > /dev/null
+  ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} > /dev/null
   stop_minio_port_forward
   brlog "INFO" "Archiving sanpshot..."
   tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
@@ -107,7 +108,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   wait_cmd ${ELASTIC_POD} "curl -XDELETE -s -k -u" ${KUBECTL_ARGS}
   echo
   start_minio_port_forward
-  ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
   brlog "INFO" "Verifying backup..."
   if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
@@ -138,9 +139,9 @@ if [ ${COMMAND} = 'restore' ] ; then
   tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   brlog "INFO" "Transfering data to MinIO..."
   start_minio_port_forward
-  ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-  ${MC} --quiet --insecure mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} > /dev/null
+  ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
+  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} > /dev/null
   stop_minio_port_forward
 
   scale_resource ${ELASTIC_CLIENT_TYPE} ${ELASTIC_RESOURCE} 0 true
@@ -165,7 +166,7 @@ if [ ${COMMAND} = 'restore' ] ; then
 
   brlog "INFO" "Clean up"
   start_minio_port_forward
-  ${MC} --quiet --insecure rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
   echo 
   brlog "INFO" "Restore Done"

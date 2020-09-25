@@ -46,6 +46,10 @@ spec:
           value: "100"
         - name: MIGRATOR_MAX_HEAP
           value: "@max-heap@"
+        - name: SDU_SERVER_ENDPOINT
+          value: "https://@sdu-svc@/api/v3"
+        - name: INITIALIZE_DB_WITH_LIQUIBASE
+          value: "true"
         - name: PGHOST
           valueFrom:
             configMapKeyRef:
