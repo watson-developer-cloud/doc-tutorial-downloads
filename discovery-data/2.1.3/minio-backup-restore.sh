@@ -57,7 +57,8 @@ else
   get_mc ${TMP_WORK_DIR}
   MC=${PWD}/${TMP_WORK_DIR}/mc
 fi
-export MINIO_CONFIG_DIR=${TMP_WORK_DIR}/.mc
+export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
+MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
@@ -65,9 +66,9 @@ if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
   start_minio_port_forward
-  ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
+  ${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   EXCLUDE_OBJECTS=`cat "${ROOT_DIR_MINIO}/src/minio_exclude_paths"`
-  for bucket in `${MC} --insecure ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET}`
+  for bucket in `${MC} ${MC_OPTS[@]} ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET}`
   do
     EXTRA_MC_MIRROR_COMMAND=""
     ORG_IFS=${IFS}
@@ -80,7 +81,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     done
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
-    ${MC} --quiet --insecure mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} > /dev/null
+    ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} > /dev/null
     cd - > /dev/null
   done
   stop_minio_port_forward
@@ -110,12 +111,12 @@ if [ "${COMMAND}" = "restore" ] ; then
   tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   brlog "INFO" "Restoring data..."
   start_minio_port_forward
-  ${MC} --quiet --insecure config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
+  ${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   for bucket in `ls ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}`
   do
-    if ${MC} --insecure ls wdminio | grep ${bucket} > /dev/null ; then
-      ${MC} --quiet --insecure rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
-      ${MC} --quiet --insecure mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} > /dev/null
+    if ${MC} ${MC_OPTS[@]} ls wdminio | grep ${bucket} > /dev/null ; then
+      ${MC} ${MC_OPTS[@]} --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
+      ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} > /dev/null
     fi
   done
   stop_minio_port_forward
