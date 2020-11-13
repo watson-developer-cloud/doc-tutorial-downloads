@@ -8,9 +8,10 @@ tags:
 affinity: {}
 
 global:
-  dockerRegistryPrefix: "cp.icr.io/cp/watson-speech"
+  dockerRegistryPrefix: "{registry_from_cluster}/{project_namespace}"
+  zenControlPlaneNamespace: "zen"
   image:
-    pullSecret: "docker-pull-{{ .Release.Namespace }}-cp-icr-io-spch-registry-registry"
+    pullSecret: {Docker_pull_secret}
     pullPolicy: "IfNotPresent"
 
   datastores:
