@@ -1,0 +1,1 @@
+psql -d dadmin -c "UPDATE source_documents SET media_type = 'application/octet-stream' WHERE media_type = 'application/vnd.ms-excel'"
