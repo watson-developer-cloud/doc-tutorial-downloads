@@ -47,9 +47,16 @@ brlog "INFO" "Release name: $RELEASE_NAME"
 
 WD_VERSION=`get_version`
 
+PG_POD=""
+
+for POD in `kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[*].metadata.name}' -l release=${RELEASE_NAME},helm.sh/chart=postgresql,component=stolon-keeper` ; do
+  if kubectl logs ${KUBECTL_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
+    PG_POD=${POD}
+  fi
+done
+
 # backup
 if [ ${COMMAND} = 'backup' ] ; then
-  PG_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${RELEASE_NAME},helm.sh/chart=postgresql,component=stolon-keeper`
   BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
   brlog "INFO" "Start backup postgresql..."
   kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c 'export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \
@@ -61,7 +68,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${PG_SCRIPT_VERSION}
   wait_cmd ${PG_POD} "pg_dump" ${KUBECTL_ARGS}
   brlog "INFO" "Archiving data..."
-  kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c 'tar zcf '${PG_BACKUP}' -C /tmp '${PG_BACKUP_DIR}
+  kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c "tar zcf ${PG_BACKUP} -C /tmp ${PG_BACKUP_DIR} && rm -rf /tmp/${PG_BACKUP_DIR}"
   wait_cmd ${PG_POD} "tar zcf" ${KUBECTL_ARGS}
   brlog "INFO" "Trasnfering archive..."
   kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${KUBECTL_ARGS}
@@ -100,13 +107,6 @@ if [ ${COMMAND} = 'restore' ] ; then
   scale_resource sts ${SDU_API_RESOURCE} 0 true
   trap "scale_resource sts ${SDU_API_RESOURCE} ${SDU_API_REPLICAS} false; scale_resource deployment ${DFS_INDUCTION_RESOURCE} ${DFS_INDUCTION_REPLICAS} false" 0 1 2 3 15
 
-  PG_POD=""
-
-  for POD in `kubectl get pods ${KUBECTL_ARGS} -o jsonpath='{.items[*].metadata.name}' -l release=${RELEASE_NAME},helm.sh/chart=postgresql,component=stolon-keeper` ; do
-    if kubectl logs ${KUBECTL_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
-      PG_POD=${POD}
-    fi
-  done
   brlog "INFO" "Start restore postgresql: ${BACKUP_FILE}"
 
   mkdir -p ${TMP_WORK_DIR}

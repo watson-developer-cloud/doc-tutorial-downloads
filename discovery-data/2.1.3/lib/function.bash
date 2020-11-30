@@ -236,15 +236,29 @@ wait_cmd(){
   shift
   FIRST=${CMD:0:1}
   GREP_STRING="[${FIRST}]${CMD:1}"
+  MAX_CMD_FAILURE_COUNT=${MAX_CMD_FAILURE_COUNT:-10}
+  MONITOR_CMD_INTERVAL=${MONITOR_CMD_INTERVAL:-5}
+  local fail_count=0
+  set +e
   while true ;
   do
-    TAR_STATUS=`kubectl exec $@ ${POD} --  bash -c 'ps auxww'`
-    if echo "${TAR_STATUS}" | grep "${GREP_STRING}" > /dev/null ; then
-      sleep 5
+    PROCESSES=`kubectl exec $@ ${POD} --  bash -c 'ps auxww'`
+    if [ -z "${PROCESSES}" ] ; then
+      fail_count=$((fail_count += 1))
+      brlog "WARN" "Failed to get process status. Failure count: ${fail_count}"
+      if [ ${fail_count} -gt ${MAX_CMD_FAILURE_COUNT} ] ; then
+        brlog "ERROR" "Can not get process status over ${MAX_CMD_FAILURE_COUNT} times."
+        exit 1
+      fi
+      sleep ${MONITOR_CMD_INTERVAL}
+    elif echo "${PROCESSES}" | grep "${GREP_STRING}" > /dev/null ; then
+      sleep ${MONITOR_CMD_INTERVAL}
+      fail_count=0
     else
       break
     fi
   done
+  set -e
 }
 
 get_mc(){
