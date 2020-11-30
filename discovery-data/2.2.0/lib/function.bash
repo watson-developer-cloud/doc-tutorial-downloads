@@ -399,7 +399,7 @@ quiesce(){
 }
 
 launch_migrator_job(){
-  MIGRATOR_TAG=${MIGRATOR_TAG:-12.0.6-2019}
+  MIGRATOR_TAG=${MIGRATOR_TAG:-12.0.6-2031}
   MIGRATOR_JOB_NAME="wd-migrator-job"
   MIGRATOR_JOB_TEMPLATE="${SCRIPT_DIR}/src/migrator-job-template.yml"
   MIGRATOR_JOB_FILE="${SCRIPT_DIR}/src/migrator-job.yml"
