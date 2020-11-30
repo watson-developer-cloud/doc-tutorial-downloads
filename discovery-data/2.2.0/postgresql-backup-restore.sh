@@ -48,10 +48,16 @@ brlog "INFO" "Tenant name: $TENANT_NAME"
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 
+PG_POD=""
+
+for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
+  if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
+    PG_POD=${POD}
+  fi
+done
 
 # backup
 if [ ${COMMAND} = 'backup' ] ; then
-  PG_POD=`oc get pods ${OC_ARGS} -o jsonpath='{.items[0].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper`
   BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
   brlog "INFO" "Start backup postgresql..."
   run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
@@ -62,7 +68,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   for DATABASE in $( psql -l | grep ${PGUSER} | cut -d "|" -f 1 | grep -v -e template -e postgres -e "^\s*$"); do pg_dump ${DATABASE} > '${PG_BACKUP_PREFIX}'${DATABASE}'${PG_BACKUP_SUFFIX}'; done && \
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${PG_SCRIPT_VERSION} ${OC_ARGS}
   brlog "INFO" "Archiving data..."
-  run_cmd_in_pod ${PG_POD} 'tar zcf '${PG_BACKUP}' -C /tmp '${PG_BACKUP_DIR}' && rm -rf /tmp/'${PG_BACKUP_DIR} ${OC_ARGS}
+  run_cmd_in_pod ${PG_POD} "tar zcf ${PG_BACKUP} -C /tmp ${PG_BACKUP_DIR} && rm -rf /tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
   brlog "INFO" "Trasnfering archive..."
   kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
   oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
@@ -88,14 +94,6 @@ if [ ${COMMAND} = 'restore' ] ; then
     echo
     exit 1
   fi
-
-  PG_POD=""
-
-  for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
-    if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
-      PG_POD=${POD}
-    fi
-  done
 
   brlog "INFO" "Transfering archive..."
   kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
