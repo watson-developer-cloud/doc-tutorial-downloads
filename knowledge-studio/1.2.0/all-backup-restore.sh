@@ -99,7 +99,7 @@ fi
 
 ################################################################
 #Decativate wks deployment
-#Make sure no running job
+#Make sure no running job 
 ################################################################
 jobs=`kubectl $KUBECTL_ARGS get job --no-headers | grep -e wks-train -e wks-batch-apply | awk '{print $2}'`
 for job in ${jobs}; do
