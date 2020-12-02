@@ -155,9 +155,7 @@
       "output": {
         "text": "Welcome to the Watson Assistant example!"
       },
-      "context": {
-        "location": "Boston"
-      },
+      "context": {},
       "metadata": {},
       "conditions": "conversation_start",
       "dialog_node": "node_1_1480350999019"
@@ -177,7 +175,7 @@
           "name": "get_weather",
           "type": "client",
           "parameters": {
-            "location": "$location"
+            "forecast_location": "$user_location"
           },
           "result_variable": "weather_forecast"
         }
@@ -228,7 +226,7 @@
           {
             "values": [
               {
-                "text": "It will be $weather_forecast in $location today."
+                "text": "It will be $weather_forecast in $user_location today."
               }
             ],
             "response_type": "text",
@@ -290,6 +288,9 @@
     "disambiguation": {
       "enabled": true,
       "sensitivity": "high"
+    },
+    "system_entities": {
+      "enabled": true
     }
   },
   "learning_opt_out": false,
