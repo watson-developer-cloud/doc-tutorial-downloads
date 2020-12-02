@@ -15,7 +15,7 @@ get_mc(){
     ARC="amd64"
     MC_URL="https://dl.min.io/client/mc/release/linux-${ARC}/archive/mc.RELEASE.2020-11-17T00-39-14Z"
   else
-    echo "Unexpected os type. Can not get mc." >&2
+    echo "Unexpected os type.  Can not get mc." >&2
     exit 1
   fi
   echo "Getting minio client: ${MC_URL}" 
