@@ -5,18 +5,42 @@ tags:
   sttRuntime: true
   ttsRuntime: true
 
-affinity: {}
-
 global:
-  dockerRegistryPrefix: "{registry_from_cluster}/{project_namespace}"
+  dockerRegistryPrefix: "image-registry.openshift-image-registry.svc:5000/zen"
   image:
-    pullSecret: {Docker_pull_secret}
+    pullSecret: "default-dockercfg-z24tv"
     pullPolicy: "IfNotPresent"
 
   datastores:
+    compose:
+      postgres:
+        defaultDatabase: postgres
+        schemaName: public
+        minIdleConnections: 0
+        maxIdleConnections: 10
+        maxTotalConnections: 20
+        maxWaitMilliseconds: 30
+
     minio:
+      enabled: true
+      endpoint: ""
+      tlsEnabled: true
+      serviceAccountName: "{{ .Release.Name }}-speech-runtime-privileged"
+
+      #Images
+      images:
+        certgen:
+          name: opencontent-icp-cert-gen-1
+          tag: 1.1.9
+        minio:
+          name: "opencontent-minio"
+          tag: 1.1.5
+        minioClient:
+          name: "opencontent-minio-client"
+          tag: 1.0.5
+
       #Sizing
-      replicas: 4
+      deploymentType: Production
       replicasForDev: 4
       replicasForProd: 4
       memoryLimit: 2048Mi
@@ -29,8 +53,54 @@ global:
 
       #Secrets
       authSecretName: minio
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
+      baseModelsBucket: speech-service-base-models
+
+    rabbitMQ:
+      tlsEnabled: true
+      replicas: 3
+      nodePort: 5671
+      managerPort: 15671
+
+      #Images
+      images:
+        config:
+          name: opencontent-rabbitmq-config-copy
+          tag: 1.1.5
+        rabbitmq:
+          name: opencontent-rabbitmq-3
+          tag: 1.1.8
+
+      #Sizing
+      cpuRequest: 200m
+      cpuLimit: 200m
+      memoryRequest: 256Mi
+      memoryLimit: 256Mi
+
+      #Storage
+      storageClassName: "portworx-sc"
+      pvEnabled: true
+      pvSize: 5Gi
+      useDynamicProvisioning: true
+
+      #Secrets
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
+      authSecretName: "{{ .Release.Name }}-ibm-rabbitmq-auth-secret"
 
     postgressql:
+      tlsEnabled: true
+      highAvailabilityEnabled: true
+      serviceAccount: "edb-operator"
+
+      #Images
+      images:
+        stolon:
+          name: "edb-stolon"
+          tag: "v1-ubi8-amd64"
+        postgres:
+          name: "edb-postgresql-12"
+          tag: "ubi8-amd64"
+
       #Sizing configuration
       numReplicas: 3
       databaseMemoryLimit: "5Gi"
@@ -43,10 +113,11 @@ global:
       databaseStorageClass: "portworx-sc"
       databaseArchiveStorageClass: "portworx-sc"
       databaseWalStorageClass: "portworx-sc"
+      databasePort: 5432
 
       #Secrets
       authSecretName: "user-provided-postgressql"
-
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
 
   sttModels:
     enUsBroadbandModel:
