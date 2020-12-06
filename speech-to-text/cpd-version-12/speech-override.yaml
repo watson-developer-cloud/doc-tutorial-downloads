@@ -16,7 +16,7 @@ global:
   datastores:
 
     minio:
-      enabled: true
+      tlsEnabled: true
       serviceAccountName: "ibm-minio-operator"
 
       #Images
