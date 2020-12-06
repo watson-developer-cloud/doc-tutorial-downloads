@@ -6,26 +6,16 @@ tags:
   ttsRuntime: true
 
 global:
-  dockerRegistryPrefix: "image-registry.openshift-image-registry.svc:5000/zen"
+  dockerRegistryPrefix: "<Registry>"
   image:
-    pullSecret: "default-dockercfg-z24tv"
+    pullSecret: "<Registry pull secret>"
     pullPolicy: "IfNotPresent"
 
   datastores:
-    compose:
-      postgres:
-        defaultDatabase: postgres
-        schemaName: public
-        minIdleConnections: 0
-        maxIdleConnections: 10
-        maxTotalConnections: 20
-        maxWaitMilliseconds: 30
 
     minio:
       enabled: true
-      endpoint: ""
-      tlsEnabled: true
-      serviceAccountName: "{{ .Release.Name }}-speech-runtime-privileged"
+      serviceAccountName: "ibm-minio-operator"
 
       #Images
       images:
@@ -40,27 +30,27 @@ global:
           tag: 1.0.5
 
       #Sizing
-      deploymentType: Production
+      deploymentType: Production #Development or Production
+
+      # 4 =< Replicas <= 32
       replicasForDev: 4
       replicasForProd: 4
+
       memoryLimit: 2048Mi
       cpuRequest: 250m
+      cpuLimit: 500m
       memoryRequest: 256Mi
 
       #Storage
       storageClassName: "portworx-sc"
-      servicePort: 9000
 
       #Secrets
       authSecretName: minio
       tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
-      baseModelsBucket: speech-service-base-models
 
     rabbitMQ:
       tlsEnabled: true
       replicas: 3
-      nodePort: 5671
-      managerPort: 15671
 
       #Images
       images:
@@ -89,7 +79,6 @@ global:
 
     postgressql:
       tlsEnabled: true
-      highAvailabilityEnabled: true
       serviceAccount: "edb-operator"
 
       #Images
