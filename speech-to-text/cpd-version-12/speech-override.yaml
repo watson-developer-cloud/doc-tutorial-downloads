@@ -5,10 +5,12 @@ tags:
   sttRuntime: true
   ttsRuntime: true
 
+affinity: {}
+
 global:
-  dockerRegistryPrefix: "<Registry>"
+  dockerRegistryPrefix: "{Registry}"
   image:
-    pullSecret: "<Registry pull secret>"
+    pullSecret: "{Registry_pull_secret}"
     pullPolicy: "IfNotPresent"
 
   datastores:
@@ -32,7 +34,7 @@ global:
       #Sizing
       deploymentType: Production #Development or Production
 
-      # 4 =< Replicas <= 32
+      # 4 <= Replicas <= 32
       replicasForDev: 4
       replicasForProd: 4
 
