@@ -118,6 +118,9 @@ if [ "${COMMAND}" = "restore" ] ; then
       if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${bucket}/`" ] ; then
         ${MC} ${MC_OPTS[@]} --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
       fi
+      if [ "${bucket}" = "discovery-dfs" ] ; then
+        continue
+      fi
       ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} > /dev/null
     fi
   done

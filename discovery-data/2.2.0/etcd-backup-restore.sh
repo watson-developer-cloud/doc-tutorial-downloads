@@ -94,7 +94,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   export ETCD_BACKUP='${ETCD_BACKUP}' && \
   if tar -tf '${ETCD_BACKUP}'  &> /dev/null ; then mkdir -p '${ETCD_BACKUP_DIR}' &&  tar xf ${ETCD_BACKUP} -C '${ETCD_BACKUP_DIR}' && export ETCD_BACKUP='${ETCD_BACKUP_FILE}' ; fi && \
   etcdctl del --prefix "/" && \
-  cat ${ETCD_BACKUP} | grep -e "\"Key\" : " -e "\"Value\" :" | sed -e "s/^\"Key\" : \"\(.*\)\"$/\1\t/g" -e "s/^\"Value\" : \"\(.*\)\"$/\1\t/g" | awk '"'"'{ORS="";print}'"'"' | sed -e "s/\\\\n/\\n/g" -e "s/\\\\\"/\"/g" | sed -e "s/\\\\\\\\/\\\\/g" | while read -r -d $'"'\t'"' line1 ; read -r -d $'"'\t'"' line2; do etcdctl put "$line1" "$line2" ; done && \
+  cat ${ETCD_BACKUP} | grep -e "\"Key\" : " -e "\"Value\" :" | sed -e "s/^\"Key\" : \"\(.*\)\"$/\1\t/g" -e "s/^\"Value\" : \"\(.*\)\"$/\1\t/g" | awk '"'"'{ORS="";print}'"'"' | sed -e '"'"'s/\\\\n/\\n/g'"'"' -e "s/\\\\\"/\"/g" | sed -e "s/\\\\\\\\/\\\\/g" | while read -r -d $'"'\t'"' line1 ; read -r -d $'"'\t'"' line2; do etcdctl put "$line1" "$line2" ; done && \
   rm -rf ${ETCD_BACKUP} '${ETCD_BACKUP_DIR} ${OC_ARGS}
   brlog "INFO" "Done"
   brlog "INFO" "Applying updates"

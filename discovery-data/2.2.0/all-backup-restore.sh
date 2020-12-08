@@ -121,11 +121,13 @@ if [ ${COMMAND} = 'restore' ] ; then
   run
 fi
 
+unquiesce
+
+./post-restore.sh ${TENANT_NAME}
+
 brlog "INFO" "Clean up"
 
 rm -rf "${BACKUP_DIR}"
-
-unquiesce
 
 echo
 brlog "INFO" "Backup/Restore Script Complete"

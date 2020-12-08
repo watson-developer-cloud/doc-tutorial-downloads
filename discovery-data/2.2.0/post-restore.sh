@@ -3,7 +3,7 @@
 set -euo pipefail
 
 printUsage() {
-  echo "Usage: $(basename ${0}) [releaseName]"
+  echo "Usage: $(basename ${0}) [tenant_name]"
   exit 1
 }
 
@@ -22,11 +22,12 @@ if [ $# -lt 1 ] ; then
 fi
 
 SCRIPT_DIR=$(dirname $0)
+TMP_WORK_DIR="tmp/post-restore"
 OC_ARGS="${OC_ARGS:-}"
 
 . ${SCRIPT_DIR}/lib/function.bash
 
-RELEASE_NAME=$1
+TENANT_NAME=$1
 shift
 while getopts n: OPT
 do
@@ -35,24 +36,55 @@ do
 esac
 done
 
-export RELEASE_NAME=${RELEASE_NAME}
-export ETCD_RELEASE_NAME="crust"
+export TENANT_NAME=${TENANT_NAME}
 export SCRIPT_DIR=${SCRIPT_DIR}
-ORG_OC_ARGS=${OC_ARGS}
 
 brlog "INFO" "Running post restore scripts"
 
-brlog "INFO" "Waiting for central pods to be ready..."
+mkdir -p ${TMP_WORK_DIR}
+
+## Restore tenants
+brlog "INFO" "Waiting for API pods to be ready..."
 while :
 do
-  if oc describe pod ${OC_ARGS} -l release=${RELEASE_NAME},run=orchestrator | grep -e "ContainersReady.*False" -e "PodScheduled.*False" > /dev/null ; then
+  if ! oc get pod ${OC_ARGS} -l tenant=${TENANT_NAME},run=gateway |& grep gateway &> /dev/null; then
+    sleep 5
+    continue
+  fi
+  if oc describe pod ${OC_ARGS} -l tenant=${TENANT_NAME},run=gateway | grep -e "ContainersReady.*False" -e "PodScheduled.*False" > /dev/null ; then
     sleep 5;
   else
-    brlog "INFO" "Central pods are ready";
+    brlog "INFO" "API pods are ready";
     break;
   fi
 done
 
-brlog "INFO" "Completed post restore scripts"
+brlog "INFO" "Restore tenants information"
 
-export OC_ARGS=${ORG_OC_ARGS}
+PG_POD=""
+
+for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
+  if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
+    PG_POD=${POD}
+  fi
+done
+
+for tenants_file in `ls -t tmp_wd_tenants_*.txt` ; do
+  if [ -n "`cat ${tenants_file}`" ] ; then
+    kube_cp_from_local ${PG_POD} "${tenants_file}" "/tmp/tenants" ${OC_ARGS}
+    run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
+      export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
+      export PGHOST=${HOSTNAME} && \
+      psql -d dadmin -c "COPY tenants FROM '"'"'/tmp/tenants'"'"'" && \
+      rm -f /tmp/tenants' ${OC_ARGS} | grep COPY >& /dev/null
+  fi
+done
+
+## End restore tenants
+
+rm -rf ${TMP_WORK_DIR}
+if [ -z "$(ls tmp)" ] ; then
+  rm -rf tmp
+fi
+
+brlog "INFO" "Completed post restore scripts"

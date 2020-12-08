@@ -387,7 +387,7 @@ quiesce(){
   # Check there are no DOCPROC application in yarn cue.
   while :
   do
-    if ! oc get ${OC_ARGS} pod -l tenant=${TENANT_NAME},run=rcm | grep rcm > /dev/null ; then
+    if ! oc get ${OC_ARGS} pod -l "tenant=${TENANT_NAME},run in (rcm, glimpse-builder, glimpse-query)" | grep -e "rcm" -e "glimpse" > /dev/null ; then
       break
     fi
     sleep 10

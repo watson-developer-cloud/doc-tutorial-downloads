@@ -95,6 +95,14 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
 
+  brlog "INFO" "Get tenant information."
+  run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
+  export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
+  export PGHOST=${HOSTNAME} && \
+  psql -d dadmin -c "COPY tenants TO '"'"'/tmp/tenants'"'"'"' ${OC_ARGS} | grep COPY > /dev/null
+  kube_cp_to_local ${PG_POD} "tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt" "/tmp/tenants" ${OC_ARGS}
+  run_cmd_in_pod ${PG_POD} 'rm -f /tmp/tenants' ${OC_ARGS}
+
   brlog "INFO" "Transfering archive..."
   kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
   brlog "INFO" "Extracting archive..."
