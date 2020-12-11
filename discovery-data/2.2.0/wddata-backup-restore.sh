@@ -39,6 +39,14 @@ brlog "INFO" "WDData: "
 brlog "INFO" "Tenant name: $TENANT_NAME"
 BACKUP_ARG=${BACKUP_ARG:-""}
 
+WDDATA_ARCHIVE_OPTION="${WDDATA_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
+if [ -n "${WDDATA_ARCHIVE_OPTION}" ] ; then
+  read -a WDDATA_TAR_OPTIONS <<< ${WDDATA_ARCHIVE_OPTION}
+else
+  WDDATA_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
 # backup wddata
 if [ ${COMMAND} = 'backup' ] ; then
@@ -54,13 +62,12 @@ OK=${OK}
 CK=${CK}
 Password=${PASSWORD}
 EOF
-  tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR} wexdata
+  tar ${WDDATA_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} wexdata
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then
     rm -rf tmp
   fi
-  brlog "INFO" "Verifying backup..."
-  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${WDDATA_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -80,7 +87,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   fi
   brlog "INFO" "Start restore wddata: ${BACKUP_FILE}"
   mkdir -p ${TMP_WORK_DIR}
-  tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
+  tar ${WDDATA_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
   ${SCRIPT_DIR}/src/update-ingestion-conf.sh ${TENANT_NAME} ${TMP_WORK_DIR}/wexdata ${BACKUP_ARG}
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then

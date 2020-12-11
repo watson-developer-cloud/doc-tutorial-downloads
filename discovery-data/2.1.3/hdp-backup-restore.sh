@@ -13,6 +13,16 @@ KUBECTL_ARGS=""
 HDP_BACKUP="/tmp/hdp_backup.tar.gz"
 HDP_BACKUP_DIR="hdp_backup"
 
+DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
+HDP_ARCHIVE_OPTION="${HDP_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
+if [ -n "${HDP_ARCHIVE_OPTION}" ] ; then
+  read -a HDP_TAR_OPTIONS <<< ${HDP_ARCHIVE_OPTION}
+else
+  HDP_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
+
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
   exit 1
@@ -63,8 +73,8 @@ if [ ${COMMAND} = 'restore' ] ; then
   brlog "INFO" "Extracting archive..."
   kubectl exec -c hdp-worker ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \
   rm -rf ${HDP_BACKUP_DIR}/* && \
-  tar xf ${HDP_BACKUP}"
-  wait_cmd ${HDP_POD} "tar xf" ${KUBECTL_ARGS} -c hdp-worker
+  tar ${HDP_ARCHIVE_OPTION} -xf ${HDP_BACKUP}"
+  wait_cmd ${HDP_POD} "tar ${HDP_ARCHIVE_OPTION} -xf" ${KUBECTL_ARGS} -c hdp-worker
   brlog "INFO" "Restoring data..."
   kubectl exec -c hdp-worker ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \
   hdfs dfs -rm -r '/*' > /dev/null && \

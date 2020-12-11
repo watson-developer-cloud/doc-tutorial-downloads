@@ -136,6 +136,13 @@ get_base64_opt(){
   fi
 }
 
+TRANSFER_COMPRESS_OPTION="${TRANSFER_COMPRESS_OPTION--z}"
+if [ -n "${TRANSFER_COMPRESS_OPTION}" ] ; then
+  read -a TRANSFER_TAR_OPTIONS <<< ${TRANSFER_COMPRESS_OPTION}
+else
+  TRANSFER_TAR_OPTIONS=("")
+fi
+
 kube_cp_from_local(){
   IS_RECURSIVE=false
   if [ "$1" = "-r" ] ; then
@@ -150,18 +157,29 @@ kube_cp_from_local(){
   shift
   SPLITE_DIR=./tmp_split_bakcup
   SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
-    ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
+    ORG_LOCAL_BACKUP=${LOCAL_BACKUP}
     kubectl exec $@ ${POD} -- bash -c "mkdir -p ${ORG_POD_BACKUP}"
-    cd ${ORG_LOCAL_BACKUP}
-    for file in `find . -type f` ; do
-      FILE_DIR_NAME=$(dirname "${file}")
-      kubectl exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
-      kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+    for file in `find "${ORG_LOCAL_BACKUP}" -type f` ; do
+      relative_path=${file#$ORG_LOCAL_BACKUP/}
+      FILE_DIR_NAME=$(dirname "${relative_path}")
+      if [ "${FILE_DIR_NAME}" != "." ] ; then
+        kubectl exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
+      fi
+      if [ ${TRANSFER_WITH_COMPRESSION-true} ] ; then
+        tar -C ${ORG_LOCAL_BACKUP} ${TRANSFER_TAR_OPTIONS[@]} -cf ${file}.tgz ${relative_path}
+        kube_cp_from_local ${POD} ${file}.tgz ${ORG_POD_BACKUP}/${relative_path}.tgz $@
+        rm -f ${ORG_LOCAL_BACKUP}/${relative_path}.tgz
+        oc exec $@ ${POD} -- bash -c "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -xf -m ${ORG_POD_BACKUP}/${relative_path}.tgz && rm -f ${ORG_POD_BACKUP}/${relative_path}.tgz"
+        wait_cmd ${POD} "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -xf ${ORG_POD_BACKUP}/${relative_path}.tgz" $@
+      else
+        kube_cp_from_local ${POD} ${file} ${ORG_POD_BACKUP}/${relative_path} $@
+      fi
     done
     return
   fi
@@ -201,12 +219,25 @@ kube_cp_to_local(){
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
-    ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
+    ORG_LOCAL_BACKUP=${LOCAL_BACKUP}
     mkdir -p ${ORG_LOCAL_BACKUP}
     for file in `kubectl exec $@ ${POD} -- bash -c "cd ${ORG_POD_BACKUP} && find . -type f"` ; do
+      file=${file#./}
       FILE_DIR_NAME=$(dirname "${file}")
-      mkdir -p ${ORG_LOCAL_BACKUP}/${FILE_DIR_NAME}
-      kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+      if [ "${FILE_DIR_NAME}" != "." ] ; then
+        mkdir -p ${ORG_LOCAL_BACKUP}/${FILE_DIR_NAME}
+      fi
+      if [ ${TRANSFER_WITH_COMPRESSION-true} ] ; then
+        oc exec $@ ${POD} -- bash -c "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -cf ${ORG_POD_BACKUP}/${file}.tgz ${file}  && rm -f ${ORG_POD_BACKUP}/${file}"
+        wait_cmd ${POD} "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -cf ${ORG_POD_BACKUP}/${file}.tgz" $@
+        kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file}.tgz ${ORG_POD_BACKUP}/${file}.tgz $@
+        oc exec $@ ${POD} -- bash -c "rm -f ${ORG_POD_BACKUP}/${file}.tgz"
+        tar -C ${ORG_LOCAL_BACKUP} ${TRANSFER_TAR_OPTIONS[@]} -xf ${ORG_LOCAL_BACKUP}/${file}.tgz
+        rm -f ${ORG_LOCAL_BACKUP}/${file}.tgz
+      else
+        kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+        oc exec $@ ${POD} -- bash -c "rm -f ${ORG_POD_BACKUP}/${file}"
+      fi
     done
     return
   fi

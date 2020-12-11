@@ -7,10 +7,38 @@ BACKUP_DIR="tmp"
 BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
 SPLITE_DIR=./tmp_split_bakcup
+BACKUPFILE_ARCHIVE_OPTION="${BACKUPFILE_ARCHIVE_OPTION-}"
+if [ -n "${BACKUPFILE_ARCHIVE_OPTION}" ] ; then
+  read -a BACKUPFILE_TAR_OPTIONS <<< ${BACKUPFILE_ARCHIVE_OPTION}
+else
+  BACKUPFILE_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_BACKUPFILE=${VERIFY_BACKUPFILE:-$VERIFY_ARCHIVE}
 
+TAB="$(printf '\t')"
 printUsage() {
-  echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
-  exit 1
+cat << EOF
+Usage:
+${TAB}$(basename ${0}) (backup|restore) <releaseName> [-f backupFile]"
+
+Environments valiables.
+Basically, you don't need these advanced options.
+
+${TAB}ARCHIVE_ON_LOCAL${TAB}${TAB}If true, archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage or compress the files with specified option, but it might take much time. Default false.
+${TAB}BACKUPFILE_ARCHIVE_OPTION${TAB}tar option for the backup file of Discovery that has all data store backup. Default "-z".
+${TAB}DATASTORE_ARCHIVE_OPTION${TAB}Default tar option for archiving the backup files of data store. Default "-z"
+${TAB}ELASTIC_ARCHIVE_OPTION${TAB}${TAB}tar option for archiving the backup files of ElasticSearch. If not set, DATASTORE_ARCHIVE_OPTION is used. tar command is executed on local machine.
+${TAB}ETCD_ARCHIVE_OPTION${TAB}${TAB}tar option for archiving the backup files of Etcd. If not set, DATASTORE_ARCHIVE_OPTION is used. tar command is executed on pod by default.
+${TAB}MINIO_ARCHIVE_OPTION${TAB}${TAB}tar option for archiving the backup files of MinIO. If not set, DATASTORE_ARCHIVE_OPTION is used. tar command is executed on local machine.
+${TAB}PG_ARCHIVE_OPTION${TAB}${TAB}tar option for archiving the backup files of Postgresql. If not set, DATASTORE_ARCHIVE_OPTION is used. tar command is executed on pod by default.
+${TAB}WDDATA_ARCHIVE_OPTION${TAB}${TAB}tar option for archiving the backup files of internal configuration. If not set, DATASTORE_ARCHIVE_OPTION is used. tar command is executed on local machine.
+${TAB}VERIFY_ARCHIVE${TAB}${TAB}${TAB}Default option whether verify the backup files or not. Default true.
+${TAB}VERIFY_BACKUPFILE${TAB}${TAB}If true, verify the archive file of Discovery backup. If not set, VERIFY_ARCHIVE is used.
+${TAB}VERIFY_DATASTORE_ARCHIVE${TAB}If true, verify the archive file of data store backup. If not set, VERIFY_ARCHIVE is used.
+
+EOF
+exit 1
 }
 
 if [ $# -lt 2 ] ; then
@@ -94,8 +122,8 @@ if [ ${COMMAND} = 'backup' ] ; then
   rm -rf ${TMP_WORK_DIR}
   echo -n "${WD_VERSION}" > ${BACKUP_VERSION_FILE}
   brlog "INFO" "Archiving all backup files..."
-  tar zcf "${BACKUP_FILE}" "${BACKUP_DIR}"
-  brlog "INFO" "Verifying backup..."
+  tar ${BACKUPFILE_TAR_OPTIONS[@]} -cf "${BACKUP_FILE}" "${BACKUP_DIR}"
+  brlog "INFO" "Checking backup file list"
   BACKUP_FILES=`ls ${BACKUP_DIR}`
   for COMP in ${ALL_COMPONENT[@]}
   do
@@ -104,7 +132,8 @@ if [ ${COMMAND} = 'backup' ] ; then
       exit 1
     fi
   done
-  if ! tar tvf ${BACKUP_FILE} ; then
+  brlog "INFO" "OK"
+  if "${VERIFY_BACKUPFILE}" && brlog "INFO" "Verifying backup archive" && ! tar ${BACKUPFILE_TAR_OPTIONS[@]} -tvf ${BACKUP_FILE} ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -126,7 +155,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
 
-  tar xf "${BACKUP_FILE}"
+  tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
   export BACKUP_FILE_VERSION=`get_backup_version`
   ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
   if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.3"` -ge 0 ] ; then

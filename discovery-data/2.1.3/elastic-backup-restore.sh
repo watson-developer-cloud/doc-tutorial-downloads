@@ -22,6 +22,15 @@ MINIO_SCRIPTS=${ROOT_DIR_ELASTIC}/minio-backup-restore.sh
 MINIO_RELEASE_NAME=crust
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 SCRIPT_DIR=${ROOT_DIR_ELASTIC}
+DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
+ELASTIC_ARCHIVE_OPTION="${ELASTIC_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
+if [ -n "${ELASTIC_ARCHIVE_OPTION}" ] ; then
+  read -a ELASTIC_TAR_OPTIONS <<< ${ELASTIC_ARCHIVE_OPTION}
+else
+  ELASTIC_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
@@ -99,7 +108,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} > /dev/null
   stop_minio_port_forward
   brlog "INFO" "Archiving sanpshot..."
-  tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
+  tar ${ELASTIC_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
   brlog "INFO" "Clean up"
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
   export ELASTIC_ENDPOINT="http://localhost:${ES_PORT}" && \
@@ -110,8 +119,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
-  brlog "INFO" "Verifying backup..."
-  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -136,7 +144,7 @@ if [ ${COMMAND} = 'restore' ] ; then
 
   brlog "INFO" "Extracting Archive..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
-  tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
+  tar ${ELASTIC_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   brlog "INFO" "Transfering data to MinIO..."
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null

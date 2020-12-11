@@ -1,5 +1,6 @@
 export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
 export WD_CMD_COMPLETION_TOKEN="completed_wd_command"
+export DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
   "ERROR") export LOG_LEVEL_NUM=0;;
   "WARN")  export LOG_LEVEL_NUM=1;;
@@ -140,6 +141,13 @@ get_base64_opt(){
   fi
 }
 
+TRANSFER_COMPRESS_OPTION="${TRANSFER_COMPRESS_OPTION--z}"
+if [ -n "${TRANSFER_COMPRESS_OPTION}" ] ; then
+  read -a TRANSFER_TAR_OPTIONS <<< ${TRANSFER_COMPRESS_OPTION}
+else
+  TRANSFER_TAR_OPTIONS=("")
+fi
+
 kube_cp_from_local(){
   IS_RECURSIVE=false
   if [ "$1" = "-r" ] ; then
@@ -159,13 +167,22 @@ kube_cp_from_local(){
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
-    ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
+    ORG_LOCAL_BACKUP=${LOCAL_BACKUP}
     oc exec $@ ${POD} -- bash -c "mkdir -p ${ORG_POD_BACKUP}"
-    cd ${ORG_LOCAL_BACKUP}
-    for file in `find . -type f` ; do
-      FILE_DIR_NAME=$(dirname "${file}")
-      oc exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
-      kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+    for file in `find "${ORG_LOCAL_BACKUP}" -type f` ; do
+      relative_path=${file#$ORG_LOCAL_BACKUP/}
+      FILE_DIR_NAME=$(dirname "${relative_path}")
+      if [ "${FILE_DIR_NAME}" != "." ] ; then
+        oc exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
+      fi
+      if [ ${TRANSFER_WITH_COMPRESSION-true} ] ; then
+        tar -C ${ORG_LOCAL_BACKUP} ${TRANSFER_TAR_OPTIONS[@]} -cf ${file}.tgz ${relative_path}
+        kube_cp_from_local ${POD} ${file}.tgz ${ORG_POD_BACKUP}/${relative_path}.tgz $@
+        rm -f ${file}.tgz
+        run_cmd_in_pod ${POD} "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -xf -m ${ORG_POD_BACKUP}/${relative_path}.tgz && rm -f ${ORG_POD_BACKUP}/${relative_path}.tgz" $@
+      else
+        kube_cp_from_local ${POD} ${file} ${ORG_POD_BACKUP}/${relative_path} $@
+      fi
     done
     return
   fi
@@ -205,12 +222,24 @@ kube_cp_to_local(){
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
-    ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
+    ORG_LOCAL_BACKUP=${LOCAL_BACKUP}
     mkdir -p ${ORG_LOCAL_BACKUP}
-    for file in `oc exec $@ ${POD} -- sh -c "cd ${ORG_POD_BACKUP} && find . -type f"` ; do
+    for file in `oc exec $@ ${POD} -- sh -c 'cd '"${ORG_POD_BACKUP}"' && ls -Rp . | awk '"'"'/:$/&&f{s=$0;f=0};/:$/&&!f{sub(/:$/,"");s=$0;f=1;next};NF&&f{ print s"/"$0 }'"'"' | grep -v '"'"'.*/$'"'"` ; do
+      file=${file#./}
       FILE_DIR_NAME=$(dirname "${file}")
-      mkdir -p ${ORG_LOCAL_BACKUP}/${FILE_DIR_NAME}
-      kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+      if [ "${FILE_DIR_NAME}" != "." ] ; then
+        mkdir -p ${ORG_LOCAL_BACKUP}/${FILE_DIR_NAME}
+      fi
+      if [ ${TRANSFER_WITH_COMPRESSION-true} ] ; then
+        run_cmd_in_pod ${POD} "tar -C ${ORG_POD_BACKUP} ${TRANSFER_COMPRESS_OPTION} -cf ${ORG_POD_BACKUP}/${file}.tgz ${file}  && rm -f ${ORG_POD_BACKUP}/${file}" $@
+        kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file}.tgz ${ORG_POD_BACKUP}/${file}.tgz $@
+        oc exec $@ ${POD} -- bash -c "rm -f ${ORG_POD_BACKUP}/${file}.tgz"
+        tar -C ${ORG_LOCAL_BACKUP} ${TRANSFER_TAR_OPTIONS[@]} -xf ${ORG_LOCAL_BACKUP}/${file}.tgz
+        rm -f ${ORG_LOCAL_BACKUP}/${file}.tgz
+      else
+        kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
+        oc exec $@ ${POD} -- bash -c "rm -f ${ORG_POD_BACKUP}/${file}"
+      fi
     done
     return
   fi
@@ -381,7 +410,7 @@ quiesce(){
   brlog "INFO" "Quiescing"
   echo
 
-  trap "brlog 'ERROR' 'Backup/Restore failed.'; unquiesce" 0 1 2 3 15
+  trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
 
   # Check there are no DOCPROC application in yarn cue.

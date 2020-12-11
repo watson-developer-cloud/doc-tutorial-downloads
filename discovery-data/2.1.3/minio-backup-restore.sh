@@ -17,6 +17,16 @@ ELASTIC_BACKUP_BUCKET="elastic-backup"
 SED_REG_OPT="`get_sed_reg_opt`"
 SCRIPT_DIR=${ROOT_DIR_MINIO}
 
+DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
+MINIO_ARCHIVE_OPTION="${MINIO_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
+if [ -n "${MINIO_ARCHIVE_OPTION}" ] ; then
+  read -a MINIO_TAR_OPTIONS <<< ${MINIO_ARCHIVE_OPTION}
+else
+  MINIO_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
+
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
   exit 1
@@ -86,9 +96,8 @@ if [ "${COMMAND}" = "backup" ] ; then
   done
   stop_minio_port_forward
   brlog "INFO" "Archiving data..."
-  tar zcf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
-  brlog "INFO" "Verifying backup..."
-  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+  tar ${MINIO_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${MINIO_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -108,7 +117,7 @@ if [ "${COMMAND}" = "restore" ] ; then
   fi
   brlog "INFO" "Start restore minio: ${BACKUP_FILE}"
   brlog "INFO" "Extracting archive..."
-  tar xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
+  tar ${MINIO_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   brlog "INFO" "Restoring data..."
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
