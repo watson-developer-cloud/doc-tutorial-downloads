@@ -1,0 +1,6 @@
+psql -d dfs_induction -c "truncate table parsestaging;" && \
+for schema in `psql -d dfs_induction -t -c "SELECT schemaname FROM pg_catalog.pg_tables where tablename = 'keywordmentions';"` ; do \
+psql -d dfs_induction -c "truncate table ${schema}.datastatus;"; \
+psql -d dfs_induction -c "truncate table ${schema}.keywordcase;"; \
+psql -d dfs_induction -c "truncate table ${schema}.keywordmentions;"; \
+done

@@ -1,4 +1,5 @@
 export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
+export WD_CMD_COMPLETION_TOKEN="completed_wd_command"
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
   "ERROR") export LOG_LEVEL_NUM=0;;
   "WARN")  export LOG_LEVEL_NUM=1;;
@@ -56,13 +57,15 @@ validate_version(){
 }
 
 get_version(){
-  if [ -n "`kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
-    if [ "`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
+  if [ -n "`oc get pod ${OC_ARGS} -l release=${TENANT_NAME},app=operator,service=discovery`" ] ; then
+    echo "2.2.0"
+  elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
+    if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
       echo "2.1.3"
     else
       echo "2.1.4"
     fi
-  elif [ -n "`kubectl get sts ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=gateway" -o jsonpath="{..image}" | grep "wd-management"`" ] ; then
+  elif [ -n "`oc get sts ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=gateway" -o jsonpath="{..image}" | grep "wd-management"`" ] ; then
     echo "2.1.2"
   else
     echo "2.1"
@@ -75,6 +78,7 @@ get_version_num(){
     "2.1.2") echo 2;;
     "2.1.3") echo 3;;
     "2.1.4") echo 4;;
+    "2.2.0") echo 5;;
     *)     echo 0;;
   esac
 }
@@ -156,11 +160,11 @@ kube_cp_from_local(){
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
     ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
-    kubectl exec $@ ${POD} -- bash -c "mkdir -p ${ORG_POD_BACKUP}"
+    oc exec $@ ${POD} -- bash -c "mkdir -p ${ORG_POD_BACKUP}"
     cd ${ORG_LOCAL_BACKUP}
     for file in `find . -type f` ; do
       FILE_DIR_NAME=$(dirname "${file}")
-      kubectl exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
+      oc exec $@ ${POD} -- bash "mkdir -p ${ORG_POD_BACKUP}/${FILE_DIR_NAME}"
       kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
     done
     return
@@ -174,12 +178,12 @@ kube_cp_from_local(){
     split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
     for file in ${SPLITE_DIR}/*; do
       FILE_BASE_NAME=$(basename "${file}")
-      kubectl cp $@ "${file}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
+      oc cp $@ "${file}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
     done
     rm -rf ${SPLITE_DIR}
-    kubectl exec $@ ${POD} -- bash -c "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*"
+    run_cmd_in_pod ${POD} "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*" $@
   else
-    kubectl cp $@ "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}"
+    oc cp $@ "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}"
   fi
 }
 
@@ -203,7 +207,7 @@ kube_cp_to_local(){
     ORG_POD_BACKUP=${POD_BACKUP}
     ORG_LOCAL_BACKUP=${ORG_LOCAL_BACKUP}
     mkdir -p ${ORG_LOCAL_BACKUP}
-    for file in `kubectl exec $@ ${POD} -- bash -c "cd ${ORG_POD_BACKUP} && find . -type f"` ; do
+    for file in `oc exec $@ ${POD} -- sh -c "cd ${ORG_POD_BACKUP} && find . -type f"` ; do
       FILE_DIR_NAME=$(dirname "${file}")
       mkdir -p ${ORG_LOCAL_BACKUP}/${FILE_DIR_NAME}
       kube_cp_to_local ${POD} ${ORG_LOCAL_BACKUP}/${file} ${ORG_POD_BACKUP}/${file} $@
@@ -211,52 +215,63 @@ kube_cp_to_local(){
     return
   fi
 
-  POD_SIZE=`kubectl $@ exec ${POD} -- bash -c "stat --printf="%s" ${POD_BACKUP}"`
+  POD_SIZE=`oc $@ exec ${POD} -- sh -c "stat -c "%s" ${POD_BACKUP}"`
   if [ ${SPLITE_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLITE_SIZE} ] ; then
     rm -rf ${SPLITE_DIR}
     mkdir -p ${SPLITE_DIR}
-    kubectl exec $@ ${POD} -- bash -c "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split."
-    FILE_LIST=`kubectl exec $@ ${POD} -- bash -c "ls ${POD_BACKUP}.split.*"`
+    run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
+    FILE_LIST=`oc exec $@ ${POD} -- sh -c "ls ${POD_BACKUP}.split.*"`
     for file in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${file}")
-      kubectl cp $@ "${POD}:${file}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
+      oc cp $@ "${POD}:${file}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
     done
     cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
     rm -rf ${SPLITE_DIR}
-    kubectl exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
+    oc exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
   else
-    kubectl cp $@ "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}"
+    oc cp $@ "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}"
   fi
 }
 
 wait_cmd(){
-  POD=$1
+  local pod=$1
   shift
-  CMD=$1
+  MONITOR_CMD_INTERVAL=${MONITOR_CMD_INTERVAL:-5}
+  while true ;
+  do
+    files=`fetch_cmd_result ${pod} "ls /tmp" $@`
+    if echo "${files}" | grep "${WD_CMD_COMPLETION_TOKEN}" > /dev/null ; then
+      break
+    else
+      sleep ${MONITOR_CMD_INTERVAL}
+    fi
+  done
+}
+
+fetch_cmd_result(){
+  set +e
+  local pod=$1
   shift
-  FIRST=${CMD:0:1}
-  GREP_STRING="[${FIRST}]${CMD:1}"
+  local cmd=$1
+  shift
   MAX_CMD_FAILURE_COUNT=${MAX_CMD_FAILURE_COUNT:-10}
   MONITOR_CMD_INTERVAL=${MONITOR_CMD_INTERVAL:-5}
   local fail_count=0
-  set +e
   while true ;
   do
-    PROCESSES=`kubectl exec $@ ${POD} --  bash -c 'ps auxww'`
-    if [ -z "${PROCESSES}" ] ; then
+    local cmd_result=`oc exec $@ ${pod} --  sh -c "${cmd}"`
+    if [ -z "${cmd_result}" ] ; then
+      brlog "WARN" "Failed to get command result. Failure count: ${fail_count}" >&2
       fail_count=$((fail_count += 1))
-      brlog "WARN" "Failed to get process status. Failure count: ${fail_count}"
       if [ ${fail_count} -gt ${MAX_CMD_FAILURE_COUNT} ] ; then
-        brlog "ERROR" "Can not get process status over ${MAX_CMD_FAILURE_COUNT} times."
+        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times."
         exit 1
       fi
       sleep ${MONITOR_CMD_INTERVAL}
-    elif echo "${PROCESSES}" | grep "${GREP_STRING}" > /dev/null ; then
-      sleep ${MONITOR_CMD_INTERVAL}
-      fail_count=0
-    else
-      break
+      continue
     fi
+    echo "${cmd_result}"
+    break
   done
   set -e
 }
@@ -266,10 +281,10 @@ get_mc(){
   if [ "$(uname)" = "Linux" ] ; then
     brlog "INFO" "Getting mc command for linux-amd64."
     launch_migrator_job
-    get_job_pod
+    get_job_pod "app.kubernetes.io/component=wd-migrator"
     wait_job_running ${POD}
-    kubectl cp ${KUBECTL_ARGS} ${POD}:/usr/local/bin/mc ${DIST_DIR}/mc
-    kubectl ${KUBECTL_ARGS} delete job ${MIGRATOR_JOB_NAME}
+    oc cp ${OC_ARGS} ${POD}:/usr/local/bin/mc ${DIST_DIR}/mc
+    oc ${OC_ARGS} delete job ${MIGRATOR_JOB_NAME}
     chmod +x ${DIST_DIR}/mc
     brlog "INFO" "Got mc command: ${DIST_DIR}/mc"
   else
@@ -288,7 +303,7 @@ start_minio_port_forward(){
 keep_minio_port_forward(){
   while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ]
   do
-    kubectl ${KUBECTL_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} > /dev/null &
+    oc ${OC_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} > /dev/null &
     PORT_FORWARD_PID=$!
     while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ] && kill -0 ${PORT_FORWARD_PID} &> /dev/null
     do
@@ -312,12 +327,12 @@ scale_resource(){
   SCALE_NUM=$3
   WAIT_SCALE=$4
   brlog "INFO" "Change replicas of ${SCALE_RESOURCE_NAME} to ${SCALE_NUM}".
-  kubectl ${KUBECTL_ARGS} scale ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} --replicas=${SCALE_NUM}
+  oc ${OC_ARGS} scale ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} --replicas=${SCALE_NUM}
   if "${WAIT_SCALE}" ; then
     brlog "INFO" "Waiting for ${SCALE_RESOURCE_NAME} to be scaled..."
     while :
     do
-      if [ "`kubectl ${KUBECTL_ARGS} get ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} -o jsonpath='{.status.replicas}'`" = "0" ] ; then
+      if [ "`oc ${OC_ARGS} get ${SCALE_RESOURCE_TYPE} ${SCALE_RESOURCE_NAME} -o jsonpath='{.status.replicas}'`" = "0" ] ; then
         break
       else
         sleep 1
@@ -333,113 +348,78 @@ set_release_names_for_ingestion(){
   HDP_RELEASE_NAME="mantle"
 }
 
-start_ingestion(){
+unquiesce(){
   echo
-  brlog "INFO" "Restore core pods"
-  echo
-  scale_resource sts ${CRAWLER_RESOURCE_NAME} ${ORG_CRAWLER_POD_NUM} false
-  scale_resource sts ${CONVERTER_RESOURCE_NAME} ${ORG_CONVERTER_POD_NUM} false
-  scale_resource sts ${INLET_RESOURCE_NAME} ${ORG_INLET_POD_NUM} false
-  scale_resource sts ${OUTLET_RESOURCE_NAME} ${ORG_OUTLET_POD_NUM} false
-  scale_resource deployment ${ORCHESTRATOR_RESOURCE_NAME} ${ORG_ORCHESTRATOR_POD_NUM} false
+  brlog "INFO" "Activating"
+  oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
   trap 0 1 2 3 15
+
+  if [ "${WAIT_ACTIVATION_COMPLETE:-false}" != "false" ] ; then
+    brlog "INFO" "Wait for the pods to be ready"
+    wait_pod_ready "tenant=${TENANT_NAME},run=minerapp"
+  fi
   echo
-  brlog "INFO" "Core pods will be restored soon."
+  brlog "INFO" "Pods will be restored soon."
   echo
 }
 
-stop_ingestion(){
-  echo
-  brlog "INFO" "Scale core pods to stop ingestion..."
-  echo
-  set_release_names_for_ingestion
-  # Scale ingestion and orchestrator pods to ensure that there are no ingestion process.
-  CRAWLER_RESOURCE_NAME=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${INGESTION_RELEASE_NAME},run=crawler`
-  ORG_CRAWLER_POD_NUM=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${INGESTION_RELEASE_NAME},run=crawler`
-  if [ ${ORG_CRAWLER_POD_NUM} -eq 0 ] ; then
-    ORG_CRAWLER_POD_NUM=1
-  fi
-  CONVERTER_RESOURCE_NAME=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${INGESTION_RELEASE_NAME},run=converter`
-  ORG_CONVERTER_POD_NUM=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${INGESTION_RELEASE_NAME},run=converter`
-  if [ ${ORG_CONVERTER_POD_NUM} -eq 0 ] ; then
-    ORG_CONVERTER_POD_NUM=1
-  fi
-  INLET_RESOURCE_NAME=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${INGESTION_RELEASE_NAME},run=inlet`
-  ORG_INLET_POD_NUM=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${INGESTION_RELEASE_NAME},run=inlet`
-  if [ ${ORG_INLET_POD_NUM} -eq 0 ] ; then
-    ORG_INLET_POD_NUM=1
-  fi
-  OUTLET_RESOURCE_NAME=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${INGESTION_RELEASE_NAME},run=outlet`
-  ORG_OUTLET_POD_NUM=`kubectl get sts ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${INGESTION_RELEASE_NAME},run=outlet`
-  if [ ${ORG_OUTLET_POD_NUM} -eq 0 ] ; then
-    ORG_OUTLET_POD_NUM=1
-  fi
-  ORCHESTRATOR_RESOURCE_NAME=`kubectl get deployment ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${ORCHESTRATOR_RELEASE_NAME},run=orchestrator`
-  ORG_ORCHESTRATOR_POD_NUM=`kubectl get deployment ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${ORCHESTRATOR_RELEASE_NAME},run=orchestrator`
-  if [ ${ORG_ORCHESTRATOR_POD_NUM} -eq 0 ] ; then
-    ORG_ORCHESTRATOR_POD_NUM=1
-  fi
-  trap "start_ingestion" 0 1 2 3 15
-  scale_resource sts ${CRAWLER_RESOURCE_NAME} 0 true
-  scale_resource sts ${CONVERTER_RESOURCE_NAME} 0 true
-  scale_resource sts ${INLET_RESOURCE_NAME} 0 true
-  scale_resource sts ${OUTLET_RESOURCE_NAME} 0 true
-  scale_resource deployment ${ORCHESTRATOR_RESOURCE_NAME} 0 false
-
-  sleep 30
-
-  HDP_RM_POD=`kubectl get pod ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${HDP_RELEASE_NAME},run=hdp-rm`
-
-  # Check there are no DOCPROC application in yarn cue.
-  brlog "INFO" "Stop all ingestion process..."
-  check_count=0
+wait_pod_ready(){
+  local label="$1"
   while :
   do
-    DOCPROC_APP=`kubectl ${KUBECTL_ARGS} exec ${HDP_RM_POD} -- bash -c 'yarn application -list 2> /dev/null | grep "DOCPROC" | cut -f1'`
-    if [ -n "${DOCPROC_APP}" ] ; then
-      check_count=0
-      for APP in ${DOCPROC_APP}
-      do
-        kubectl ${KUBECTL_ARGS} exec ${HDP_RM_POD} -- yarn application -kill ${APP} || true
-      done
+    if oc describe pod ${OC_ARGS} -l "${label}" | grep -e "ContainersReady.*False" -e "PodScheduled.*False" > /dev/null ; then
+      sleep 5;
     else
-      check_count=$((check_count += 1))
-      if [ ${check_count} -gt 5 ] ; then
-        break
-      fi
+      brlog "INFO" "Pods are ready";
+      break;
     fi
+  done
+}
+
+quiesce(){
+  echo
+  brlog "INFO" "Quiescing"
+  echo
+
+  trap "brlog 'ERROR' 'Backup/Restore failed.'; unquiesce" 0 1 2 3 15
+  oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
+
+  # Check there are no DOCPROC application in yarn cue.
+  while :
+  do
+    if ! oc get ${OC_ARGS} pod -l "tenant=${TENANT_NAME},run in (rcm, glimpse-builder, glimpse-query)" | grep -e "rcm" -e "glimpse" > /dev/null ; then
+      break
+    fi
+    sleep 10
   done
 
   echo
-  brlog "INFO" "Stopped ingestion."
+  brlog "INFO" "Quiesced"
   echo
 }
 
 launch_migrator_job(){
-  MIGRATOR_TAG=${MIGRATOR_TAG:-12.0.4-1048}
+  MIGRATOR_TAG=${MIGRATOR_TAG:-12.0.6-2031}
   MIGRATOR_JOB_NAME="wd-migrator-job"
   MIGRATOR_JOB_TEMPLATE="${SCRIPT_DIR}/src/migrator-job-template.yml"
   MIGRATOR_JOB_FILE="${SCRIPT_DIR}/src/migrator-job.yml"
   ADMIN_RELEASE_NAME="admin"
-  DATA_SOURCE_RELEASE_NAME="crust"
-  CORE_RELEASE_NAME="core"
   MIGRATOR_CPU_LIMITS="${MIGRATOR_CPU_LIMITS:-800m}"
   MIGRATOR_MEMORY_LIMITS="${MIGRATOR_MEMORY_LIMITS:-4Gi}"
   MIGRATOR_MAX_HEAP="${MIGRATOR_MAX_HEAP:-3g}"
 
-  WD_MIGRATOR_REPO=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.dockerImageRepository}"`
-  WD_MIGRATOR_TAG=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`
+  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
+  WD_MIGRATOR_TAG="${MIGRATOR_TAG}"
   WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
-  PG_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=postgresql -o jsonpath="{.items[0].metadata.name}"`
-  PG_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME},helm.sh/chart=postgresql -o jsonpath="{.items[*].metadata.name}"`
-  ETCD_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=etcd -o jsonpath="{.items[0].metadata.name}"`
-  ETCD_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME},helm.sh/chart=etcd -o jsonpath="{.items[*].metadata.name}"`
-  CK_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${CORE_RELEASE_NAME},app.kubernetes.io/component=core-discovery-wex-core-ck-secret -o jsonpath="{.items[*].metadata.name}"`
-  MINIO_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=minio -o jsonpath="{.items[0].metadata.name}"`
-  MINIO_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME} -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep minio`
-  DISCO_SVC_ACCOUNT=`kubectl ${KUBECTL_ARGS} get serviceaccount -l release=${ADMIN_RELEASE_NAME} -o jsonpath="{.items[*].metadata.name}"`
-  SDU_SVC=`kubectl get ${KUBECTL_ARGS} configmap core-discovery-gateway -o jsonpath='{.data.SDU_SVC}'`
-  NAMESPACE=${NAMESPACE:-`kubectl config view --minify --output 'jsonpath={..namespace}'`}
+  PG_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}"`
+  PG_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}"`
+  ETCD_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=etcd-cxn -o jsonpath="{.items[0].metadata.name}"`
+  ETCD_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=etcd-root -o jsonpath="{.items[*].metadata.name}"`
+  CK_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=ck-secret -o jsonpath="{.items[*].metadata.name}"`
+  MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
+  MINIO_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=minio-auth -o jsonpath="{.items[*].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
 
   sed -e "s/@namespace@/${NAMESPACE}/g" \
     -e "s/@svc-account@/${DISCO_SVC_ACCOUNT}/g" \
@@ -454,24 +434,24 @@ launch_migrator_job(){
     -e "s/@ck-secret@/${CK_SECRET}/g" \
     -e "s/@cpu-limit@/${MIGRATOR_CPU_LIMITS}/g" \
     -e "s/@memory-limit@/${MIGRATOR_MEMORY_LIMITS}/g" \
-    -e "s/@sdu-svc@/${SDU_SVC}/g" \
     "${MIGRATOR_JOB_TEMPLATE}" > "${MIGRATOR_JOB_FILE}"
 
-  kubectl ${KUBECTL_ARGS} apply -f "${MIGRATOR_JOB_FILE}"
+  oc ${OC_ARGS} apply -f "${MIGRATOR_JOB_FILE}"
 }
 
 get_job_pod(){
-  brlog "INFO" "Waiting for migrator pod"
+  local label=$1
+  brlog "INFO" "Waiting for job pod"
   POD=""
   MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-20}
   WAIT_COUNT=0
   while :
   do
-    PODS=`kubectl get ${KUBECTL_ARGS} pod -l release=core,app.kubernetes.io/component=wd-migrator -o jsonpath="{.items[*].metadata.name}"`
+    PODS=`oc get ${OC_ARGS} pod -l "${label}" -o jsonpath="{.items[*].metadata.name}"`
     if [ -n "${PODS}" ] ; then
       for P in $PODS ;
       do
-        if [ "`kubectl get ${KUBECTL_ARGS} pod ${P} -o jsonpath='{.status.phase}'`" != "Failed" ] ; then
+        if [ "`oc get ${OC_ARGS} pod ${P} -o jsonpath='{.status.phase}'`" != "Failed" ] ; then
           POD=${P}
         fi
       done
@@ -480,7 +460,7 @@ get_job_pod(){
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      brlog "ERROR" "Migrator pod have not been created after 100s"
+      brlog "ERROR" "Pod have not been created after 100s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))
@@ -494,15 +474,57 @@ wait_job_running() {
   WAIT_COUNT=0
   while :
   do
-    STATUS=`kubectl get ${KUBECTL_ARGS} pod ${POD} -o jsonpath="{.status.phase}"`
+    STATUS=`oc get ${OC_ARGS} pod ${POD} -o jsonpath="{.status.phase}"`
     if [ "${STATUS}" = "Running" ] ; then
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      brlog "ERROR" "Migrator pod have not run after 100s"
+      brlog "ERROR" "Pod have not run after 100s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))
     sleep 5
   done
+}
+
+run_core_init_db_job(){
+  local label="tenant=${TENANT_NAME},run=core-database-init"
+  JOB_NAME=`oc get ${OC_ARGS} job -o jsonpath="{.items[0].metadata.name}" -l "${label}"`
+  oc delete ${OC_ARGS} job -l "${label}"
+  oc delete pod -l "release=${TENANT_NAME},app=operator"
+  MAX_MIGRATOR_JOB_WAIT_COUNT=40
+  get_job_pod "${label}"
+  wait_job_running ${POD}
+  brlog "INFO" "Waiting for core db config job to be completed..."
+  while :
+  do
+    if [ "`oc ${OC_ARGS} get job -o jsonpath='{.status.succeeded}' ${JOB_NAME}`" = "1" ] ; then
+      brlog "INFO" "Completed postgres config job"
+      break;
+    else
+      sleep 5
+    fi
+  done
+}
+
+run_cmd_in_pod(){
+  local pod="$1"
+  shift
+  local cmd="$1"
+  shift
+  WD_CMD_FILE="wd-br-cmd.sh"
+  WD_CMD_LOG="wd-br-cmd.log"
+
+  cat <<EOF >| ${TMP_WORK_DIR}/${WD_CMD_FILE}
+trap "touch /tmp/${WD_CMD_COMPLETION_TOKEN}" 0 1 2 3 15
+{ ${cmd} ; } &> /tmp/${WD_CMD_LOG}
+touch /tmp/${WD_CMD_COMPLETION_TOKEN}
+trap 0 1 2 3 15
+EOF
+
+  chmod +x ${TMP_WORK_DIR}/${WD_CMD_FILE}
+  oc cp $@ ${TMP_WORK_DIR}/${WD_CMD_FILE} ${pod}:/tmp/${WD_CMD_FILE}
+  oc exec $@ ${pod} -- bash -c "rm -rf /tmp/${WD_CMD_COMPLETION_TOKEN} && /tmp/${WD_CMD_FILE} &"
+  wait_cmd ${pod} $@
+  oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}"
 }

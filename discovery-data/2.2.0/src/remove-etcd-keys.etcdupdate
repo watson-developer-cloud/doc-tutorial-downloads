@@ -1,0 +1,10 @@
+etcdctl del --prefix "/wex/global/crawler/locks/pollJob/" && \
+etcdctl del --prefix "/wex/global/orchestrator/timerbased.leader" && \
+etcdctl del --prefix "/wex/global/crawler/crawler.security.leader" && \
+etcdctl del --prefix "/all/ranker" && \
+etcdctl del --prefix "/wex/global/converter/state/inlet/" && \
+etcdctl del --prefix "/wex/global/converter/state/outlet/" && \
+etcdctl del --prefix "/wex/global/converter/state/thread/" && \
+etcdctl del --prefix "/all/dfs" && \
+etcdctl get --prefix --keys-only=true "/wex/global/crawler/" | \
+grep -e "/status" -e "/state" | while read line ; do etcdctl del $line ; done

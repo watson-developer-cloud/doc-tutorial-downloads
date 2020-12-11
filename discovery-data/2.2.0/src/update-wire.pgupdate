@@ -1,0 +1,1 @@
+psql -d ranker_training -c 'UPDATE data SET version = version+1'
