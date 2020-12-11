@@ -1,0 +1,265 @@
+tags:
+  sttAsync: true
+  sttCustomization: true
+  ttsCustomization: true
+  sttRuntime: true
+  ttsRuntime: true
+
+affinity: {}
+
+global:
+  dockerRegistryPrefix: "{Registry}"
+  image:
+    pullSecret: "{Registry_pull_secret}"
+    pullPolicy: "IfNotPresent"
+
+  datastores:
+
+    minio:
+      tlsEnabled: true
+      serviceAccountName: "ibm-minio-operator"
+
+      #Images
+      images:
+        certgen:
+          name: opencontent-icp-cert-gen-1
+          tag: 1.1.9
+        minio:
+          name: "opencontent-minio"
+          tag: 1.1.5
+        minioClient:
+          name: "opencontent-minio-client"
+          tag: 1.0.5
+
+      #Sizing
+      deploymentType: Development #Development or Production
+
+      # 4 <= Replicas <= 32
+      replicasForDev: 4
+      replicasForProd: 4
+
+      memoryLimit: 2048Mi
+      cpuRequest: 250m
+      cpuLimit: 500m
+      memoryRequest: 256Mi
+
+      #Storage
+      storageClassName: "portworx-sc"
+
+      #Secrets
+      authSecretName: minio
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
+
+    rabbitMQ:
+      tlsEnabled: true
+      replicas: 3
+
+      #Images
+      images:
+        config:
+          name: opencontent-rabbitmq-config-copy
+          tag: 1.1.5
+        rabbitmq:
+          name: opencontent-rabbitmq-3
+          tag: 1.1.8
+
+      #Sizing
+      cpuRequest: 200m
+      cpuLimit: 200m
+      memoryRequest: 256Mi
+      memoryLimit: 256Mi
+
+      #Storage
+      storageClassName: "portworx-sc"
+      pvEnabled: true
+      pvSize: 5Gi
+      useDynamicProvisioning: true
+
+      #Secrets
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
+      authSecretName: "{{ .Release.Name }}-ibm-rabbitmq-auth-secret"
+
+    postgressql:
+      tlsEnabled: true
+      serviceAccount: "edb-operator"
+
+      #Images
+      images:
+        stolon:
+          name: "edb-stolon"
+          tag: "v1-ubi8-amd64"
+        postgres:
+          name: "edb-postgresql-12"
+          tag: "ubi8-amd64"
+
+      #Sizing configuration
+      replicas: 3
+      databaseMemoryLimit: "5Gi"
+      databaseMemoryRequest: "1Gi"
+      databaseCPULimit: "1000m"
+      databaseCPU: "50m"
+      databaseStorageRequest: "5Gi"
+
+      #Storage configuration
+      databaseStorageClass: "portworx-sc"
+      databaseArchiveStorageClass: "portworx-sc"
+      databaseWalStorageClass: "portworx-sc"
+      databasePort: 5432
+
+      #Secrets
+      authSecretName: "user-provided-postgressql"
+      tlsSecretName: "{{ .Release.Name }}-ibm-datastore-tls"
+
+  sttModels:
+    enUsBroadbandModel:
+      enabled: true
+      catalogName: en-US_BroadbandModel
+    enUsNarrowbandModel:
+      enabled: true
+      catalogName: en-US_NarrowbandModel
+    enUsShortFormNarrowbandModel:
+      enabled: true
+      catalogName: en-US_ShortForm_NarrowbandModel
+    enAuBroadbandModel:
+      enabled: false
+      catalogName: en-AU_BroadbandModel
+    enAuNarrowbandModel:
+      enabled: false
+      catalogName: en-AU_NarrowbandModel
+    jaJpBroadbandModel:
+      enabled: false
+      catalogName: ja-JP_BroadbandModel
+    jaJpNarrowbandModel:
+      enabled: false
+      catalogName: ja-JP_NarrowbandModel
+    koKrBroadbandModel:
+      enabled: false
+      catalogName: ko-KR_BroadbandModel
+    koKrNarrowbandModel:
+      enabled: false
+      catalogName: ko-KR_NarrowbandModel
+    esEsBroadbandModel:
+      enabled: false
+      catalogName: es-ES_BroadbandModel
+    esEsNarrowbandModel:
+      enabled: false
+      catalogName: es-ES_NarrowbandModel
+    frCaBroadbandModel:
+      enabled: false
+      catalogName: fr-CA_BroadbandModel
+    frCaNarrowbandModel:
+      enabled: false
+      catalogName: fr-CA_NarrowbandModel
+    frFrBroadbandModel:
+      enabled: false
+      catalogName: fr-FR_BroadbandModel
+    frFrNarrowbandModel:
+      enabled: false
+      catalogName: fr-FR_NarrowbandModel
+    arArBroadbandModel:
+      enabled: false
+      catalogName: ar-AR_BroadbandModel
+    deDeBroadbandModel:
+      enabled: false
+      catalogName: de-DE_BroadbandModel
+    deDeNarrowbandModel:
+      enabled: false
+      catalogName: de-DE_NarrowbandModel
+    enGbBroadbandModel:
+      enabled: false
+      catalogName: en-GB_BroadbandModel
+    enGbNarrowbandModel:
+      enabled: false
+      catalogName: en-GB_NarrowbandModel
+    ptBrBroadbandModel:
+      enabled: false
+      catalogName: pt-BR_BroadbandModel
+    ptBrNarrowbandModel:
+      enabled: false
+      catalogName: pt-BR_NarrowbandModel
+    zhCnBroadbandModel:
+      enabled: false
+      catalogName: zh-CN_BroadbandModel
+    zhCnNarrowbandModel:
+      enabled: false
+      catalogName: zh-CN_NarrowbandModel
+    itItBroadbandModel:
+      enabled: false
+      catalogName: it-IT_BroadbandModel
+    itItNarrowbandModel:
+      enabled: false
+      catalogName: it-IT_NarrowbandModel
+    nlNlBroadbandModel:
+      enabled: false
+      catalogName: nl-NL_BroadbandModel
+    nlNlNarrowbandModel:
+      enabled: false
+      catalogName: nl-NL_NarrowbandModel
+
+  ttsVoices:
+    enUSMichaelV3Voice:
+      enabled: true
+      catalogName: en-US_MichaelV3Voice
+    enUSLisaV3Voice:
+      enabled: true
+      catalogName: en-US_LisaV3Voice
+    enUSAllisonV3Voice:
+      enabled: true
+      catalogName: en-US_AllisonV3Voice
+    deDEBirgitV3Voice:
+      enabled: false
+      catalogName: de-DE_BirgitV3Voice
+    deDEDieterV3Voice:
+      enabled: false
+      catalogName: de-DE_DieterV3Voice
+    enGBKateV3Voice:
+      enabled: false
+      catalogName: en-GB_KateV3Voice
+    esLASofiaV3Voice:
+      enabled: false
+      catalogName: es-LA_SofiaV3Voice
+    esUSSofiaV3Voice:
+      enabled: false
+      catalogName: es-US_SofiaV3Voice
+    ptBRIsabelaV3Voice:
+      enabled: false
+      catalogName: pt-BR_IsabelaV3Voice
+    esESEnriqueV3Voice:
+      enabled: false
+      catalogName: es-ES_EnriqueV3Voice
+    esESLauraV3Voice:
+      enabled: false
+      catalogName: es-ES_LauraV3Voice
+    frFRReneeV3Voice:
+      enabled: false
+      catalogName: fr-FR_ReneeV3Voice
+    itITFrancescaV3Voice:
+      enabled: false
+      catalogName: it-IT_FrancescaV3Voice
+    frFRNicolasV3Voice:
+      enabled: false
+      catalogName: fr-FR_NicolasV3Voice
+    jaJPEmiV3Voice:
+      enabled: false
+      catalogName: ja-JP_EmiV3Voice
+    deDEErikaV3Voice:
+      enabled: false
+      catalogName: de-DE_ErikaV3Voice
+    enUSEmilyV3Voice:
+      enabled: false
+      catalogName: en-US_EmilyV3Voice
+    enUSHenryV3Voice:
+      enabled: false
+      catalogName: en-US_HenryV3Voice
+    enUSKevinV3Voice:
+      enabled: false
+      catalogName: en-US_KevinV3Voice
+    enUSOliviaV3Voice:
+      enabled: false
+      catalogName: en-US_OliviaV3Voice
+    enGBCharlotteV3Voice:
+      enabled: false
+      catalogName: en-GB_CharlotteV3Voice
+    enGBJamesV3Voice:
+      enabled: false
+      catalogName: en-GB_JamesV3Voice

@@ -1,0 +1,300 @@
+{
+  "intents": [
+    {
+      "intent": "goodbye",
+      "examples": [
+        {
+          "text": "Bye"
+        },
+        {
+          "text": "Farewell"
+        },
+        {
+          "text": "Goodbye"
+        },
+        {
+          "text": "I am leaving."
+        },
+        {
+          "text": "I'm leaving"
+        },
+        {
+          "text": "Sayonara"
+        },
+        {
+          "text": "See you later"
+        }
+      ]
+    },
+    {
+      "intent": "hello",
+      "examples": [
+        {
+          "text": "good morning"
+        },
+        {
+          "text": "greetings"
+        },
+        {
+          "text": "hello"
+        },
+        {
+          "text": "hi"
+        },
+        {
+          "text": "howdy"
+        },
+        {
+          "text": "I am here"
+        },
+        {
+          "text": "I have arrived"
+        }
+      ]
+    },
+    {
+      "intent": "menu",
+      "examples": [
+        {
+          "text": "list what functions are available"
+        },
+        {
+          "text": "show a menu of choices"
+        },
+        {
+          "text": "what are my choices?"
+        },
+        {
+          "text": "what are the available options"
+        },
+        {
+          "text": "What can I do?"
+        },
+        {
+          "text": "what can you do"
+        }
+      ],
+      "description": ""
+    },
+    {
+      "intent": "weather",
+      "examples": [
+        {
+          "text": "Can you give me a weather forecast?"
+        },
+        {
+          "text": "Is it hot or cold?"
+        },
+        {
+          "text": "Is it raining?"
+        },
+        {
+          "text": "What's it like outside today?"
+        },
+        {
+          "text": "What's the temperature today?"
+        },
+        {
+          "text": "What's the weather today?"
+        },
+        {
+          "text": "Will there be snow today?"
+        }
+      ],
+      "description": ""
+    }
+  ],
+  "entities": [],
+  "metadata": {
+    "api_version": {
+      "major_version": "v2",
+      "minor_version": "2018-11-08"
+    }
+  },
+  "dialog_nodes": [
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "Good day to you."
+          ],
+          "selection_policy": "sequential"
+        }
+      },
+      "context": {},
+      "metadata": {},
+      "conditions": "#hello",
+      "dialog_node": "node_1_1479323581900",
+      "previous_sibling": "node_1_1480350999019"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "OK! See you later."
+          ],
+          "selection_policy": "sequential"
+        }
+      },
+      "actions": [
+        {
+          "name": "end_conversation",
+          "type": "client",
+          "result_variable": "null"
+        }
+      ],
+      "metadata": {},
+      "conditions": "#goodbye",
+      "dialog_node": "node_1_1479487905980",
+      "previous_sibling": "node_1_1479323581900"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": "Welcome to the Watson Assistant example!"
+      },
+      "context": {},
+      "metadata": {},
+      "conditions": "conversation_start",
+      "dialog_node": "node_1_1480350999019"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "Checking the weather..."
+          ],
+          "selection_policy": "sequential"
+        }
+      },
+      "actions": [
+        {
+          "name": "get_weather",
+          "type": "client",
+          "parameters": {
+            "forecast_location": "$user_location"
+          },
+          "result_variable": "weather_forecast"
+        }
+      ],
+      "metadata": {},
+      "conditions": "#weather",
+      "dialog_node": "node_1_1601474349922",
+      "previous_sibling": "node_1_1479487905980"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "generic": [
+          {
+            "values": [
+              {
+                "text": "Oops! I couldn't get the weather forecast. Maybe try again later?"
+              }
+            ],
+            "response_type": "text",
+            "selection_policy": "sequential"
+          }
+        ]
+      },
+      "parent": "node_1_1601474349922",
+      "conditions": "true",
+      "dialog_node": "node_1_1601478398984",
+      "previous_sibling": "node_2_1601474349926"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "text": {
+          "values": [
+            "Sorry, I have no idea what you're talking about."
+          ]
+        }
+      },
+      "metadata": {},
+      "conditions": "anything_else",
+      "dialog_node": "node_2_1479323591143",
+      "previous_sibling": "node_7_1555438966545"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "generic": [
+          {
+            "values": [
+              {
+                "text": "It will be $weather_forecast in $user_location today."
+              }
+            ],
+            "response_type": "text",
+            "selection_policy": "sequential"
+          }
+        ]
+      },
+      "parent": "node_1_1601474349922",
+      "conditions": "$weather_forecast",
+      "dialog_node": "node_2_1601474349926"
+    },
+    {
+      "type": "standard",
+      "output": {
+        "generic": [
+          {
+            "title": "What do you want to do?",
+            "options": [
+              {
+                "label": "Send greeting",
+                "value": {
+                  "input": {
+                    "text": "hello"
+                  }
+                }
+              },
+              {
+                "label": "Display the weather forecast",
+                "value": {
+                  "input": {
+                    "text": "weather"
+                  }
+                }
+              },
+              {
+                "label": "Exit",
+                "value": {
+                  "input": {
+                    "text": "goodbye"
+                  }
+                }
+              }
+            ],
+            "response_type": "option"
+          }
+        ]
+      },
+      "conditions": "#menu",
+      "dialog_node": "node_7_1555438966545",
+      "previous_sibling": "node_1_1601474349922"
+    }
+  ],
+  "counterexamples": [
+    {
+      "text": "that's cool"
+    }
+  ],
+  "system_settings": {
+    "disambiguation": {
+      "enabled": true,
+      "sensitivity": "high"
+    },
+    "system_entities": {
+      "enabled": true
+    }
+  },
+  "learning_opt_out": false,
+  "name": "simple example v2",
+  "language": "en",
+  "description": "Simple client example that returns result from client action."
+}
