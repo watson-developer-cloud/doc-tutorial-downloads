@@ -45,6 +45,17 @@ SCRIPT_ARGS=${SCRIPT_ARGS:-""}
 brlog "INFO" "Postgressql: "
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
+PG_ARCHIVE_OPTION="${PG_ARCHIVE_OPTION--z}"
+if [ -n "${PG_ARCHIVE_OPTION}" ] ; then
+  read -a PG_TAR_OPTIONS <<< ${PG_ARCHIVE_OPTION}
+else
+  PG_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
+
+ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
+
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 
@@ -67,13 +78,20 @@ if [ ${COMMAND} = 'backup' ] ; then
   mkdir -p /tmp/'${PG_BACKUP_DIR}' && \
   for DATABASE in $( psql -l | grep ${PGUSER} | cut -d "|" -f 1 | grep -v -e template -e postgres -e "^\s*$"); do pg_dump ${DATABASE} > '${PG_BACKUP_PREFIX}'${DATABASE}'${PG_BACKUP_SUFFIX}'; done && \
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${PG_SCRIPT_VERSION} ${OC_ARGS}
-  brlog "INFO" "Archiving data..."
-  run_cmd_in_pod ${PG_POD} "tar zcf ${PG_BACKUP} -C /tmp ${PG_BACKUP_DIR} && rm -rf /tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
-  brlog "INFO" "Trasnfering archive..."
-  kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
-  oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
-  brlog "INFO" "Verifying backup..."
-  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${ARCHIVE_ON_LOCAL}" ; then 
+    brlog "INFO" "Transfering backup files"
+    kube_cp_to_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
+    oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR}"
+    brlog "INFO" "Archiving data"
+    tar ${PG_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} ${PG_BACKUP_DIR}
+  else
+    brlog "INFO" "Archiving data..."
+    run_cmd_in_pod ${PG_POD} "tar ${PG_ARCHIVE_OPTION} -cf ${PG_BACKUP} -C /tmp ${PG_BACKUP_DIR} && rm -rf /tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
+    brlog "INFO" "Trasnfering archive..."
+    kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
+    oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
+  fi
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${PG_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -103,10 +121,17 @@ if [ ${COMMAND} = 'restore' ] ; then
   kube_cp_to_local ${PG_POD} "tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt" "/tmp/tenants" ${OC_ARGS}
   run_cmd_in_pod ${PG_POD} 'rm -f /tmp/tenants' ${OC_ARGS}
 
-  brlog "INFO" "Transfering archive..."
-  kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
-  brlog "INFO" "Extracting archive..."
-  run_cmd_in_pod ${PG_POD} 'cd tmp && rm -rf '${PG_BACKUP_DIR}' && tar xf '${PG_BACKUP} ${OC_ARGS}
+  if "${ARCHIVE_ON_LOCAL}" ; then
+    brlog "INFO" "Extracting archive"
+    tar ${PG_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
+    brlog "INFO" "Transfering backup files"
+    kube_cp_from_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
+  else
+    brlog "INFO" "Transferting archive..."
+    kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
+    brlog "INFO" "Extracting archive..."
+    run_cmd_in_pod ${PG_POD} "cd tmp && rm -rf ${PG_BACKUP_DIR} && tar ${PG_ARCHIVE_OPTION} -xf ${PG_BACKUP}" ${OC_ARGS}
+  fi
   brlog "INFO" "Restorering data..."
   run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
   export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \

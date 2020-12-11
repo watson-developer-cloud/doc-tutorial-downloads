@@ -36,6 +36,16 @@ done
 brlog "INFO" "ETCD: "
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
+ETCD_ARCHIVE_OPTION="${ETCD_ARCHIVE_OPTION--z}"
+if [ -n "${ETCD_ARCHIVE_OPTION}" ] ; then
+  read -a ETCD_TAR_OPTIONS <<< ${ETCD_ARCHIVE_OPTION}
+else
+  ETCD_TAR_OPTIONS=("")
+fi
+VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
+VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
+ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
+
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 
@@ -56,13 +66,23 @@ if [ ${COMMAND} = 'backup' ] ; then
   export ETCDCTL_CACERT='/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt' && \
   export ETCDCTL_KEY='/etc/etcdtls/operator/etcd-tls/etcd-client.key' && \
   export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379' && \
-  etcdctl get --prefix '/' -w fields > ${ETCD_BACKUP_FILE} && \
-  tar zcf ${ETCD_BACKUP} -C ${ETCD_BACKUP_DIR} ." ${OC_ARGS}
-  brlog "INFO" "Transfering archive..."
-  kube_cp_to_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${OC_ARGS}
-  oc ${OC_ARGS} exec ${ETCD_POD} --  bash -c "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP}"
-  brlog "INFO" "Verifying backup..."
-  if ! tar tf ${BACKUP_FILE} &> /dev/null ; then
+  etcdctl get --prefix '/' -w fields > ${ETCD_BACKUP_FILE}" ${OC_ARGS}
+
+  if "${ARCHIVE_ON_LOCAL}" ; then 
+    brlog "INFO" "Transfering backup files"
+    mkdir -p "`dirname ${TMP_WORK_DIR}${ETCD_BACKUP_DIR}`"
+    kube_cp_to_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
+    oc ${OC_ARGS} exec ${ETCD_POD} -- bash -c "rm -rf ${ETCD_BACKUP_DIR}"
+    brlog "INFO" "Archiving data"
+    tar ${ETCD_TAR_OPTIONS[@]} -cf "${BACKUP_FILE}" -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" .
+  else
+    brlog "INFO" "Archiving data..."
+    run_cmd_in_pod ${ETCD_POD} "tar ${ETCD_ARCHIVE_OPTION} -cf ${ETCD_BACKUP} -C ${ETCD_BACKUP_DIR} ." ${OC_ARGS}
+    brlog "INFO" "Trasnfering archive..."
+    kube_cp_to_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${OC_ARGS}
+    oc ${OC_ARGS} exec ${ETCD_POD} --  bash -c "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP}"
+  fi
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ETCD_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -82,8 +102,19 @@ if [ ${COMMAND} = 'restore' ] ; then
   fi
   ETCD_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd`
   brlog "INFO" "Start restore etcd: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
-  kube_cp_from_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${OC_ARGS}
+
+  if "${ARCHIVE_ON_LOCAL}" ; then
+    brlog "INFO" "Extracting archive"
+    mkdir -p "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
+    tar ${ETCD_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
+    brlog "INFO" "Transfering backup files"
+    kube_cp_from_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
+  else
+    brlog "INFO" "Transferting archive..."
+    kube_cp_from_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${OC_ARGS}
+    brlog "INFO" "Extracting archive..."
+    run_cmd_in_pod ${ETCD_POD} "rm -rf ${ETCD_BACKUP_DIR} && mkdir -p ${ETCD_BACKUP_DIR} && tar -C ${ETCD_BACKUP_DIR} ${ETCD_ARCHIVE_OPTION} -xf ${ETCD_BACKUP}" ${OC_ARGS}
+  fi
   brlog "INFO" "Restoring data..."
   run_cmd_in_pod ${ETCD_POD} 'export ETCDCTL_API=3 && \
   export ETCDCTL_USER='${ETCD_USER}':'${ETCD_PASSWORD}' && \
@@ -91,8 +122,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   export ETCDCTL_CACERT=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt && \
   export ETCDCTL_KEY=/etc/etcdtls/operator/etcd-tls/etcd-client.key && \
   export ETCDCTL_ENDPOINTS=https://'${ETCD_SERVICE}':2379 && \
-  export ETCD_BACKUP='${ETCD_BACKUP}' && \
-  if tar -tf '${ETCD_BACKUP}'  &> /dev/null ; then mkdir -p '${ETCD_BACKUP_DIR}' &&  tar xf ${ETCD_BACKUP} -C '${ETCD_BACKUP_DIR}' && export ETCD_BACKUP='${ETCD_BACKUP_FILE}' ; fi && \
+  export ETCD_BACKUP='${ETCD_BACKUP_FILE}' && \
   etcdctl del --prefix "/" && \
   cat ${ETCD_BACKUP} | grep -e "\"Key\" : " -e "\"Value\" :" | sed -e "s/^\"Key\" : \"\(.*\)\"$/\1\t/g" -e "s/^\"Value\" : \"\(.*\)\"$/\1\t/g" | awk '"'"'{ORS="";print}'"'"' | sed -e '"'"'s/\\\\n/\\n/g'"'"' -e "s/\\\\\"/\"/g" | sed -e "s/\\\\\\\\/\\\\/g" | while read -r -d $'"'\t'"' line1 ; read -r -d $'"'\t'"' line2; do etcdctl put "$line1" "$line2" ; done && \
   rm -rf ${ETCD_BACKUP} '${ETCD_BACKUP_DIR} ${OC_ARGS}
