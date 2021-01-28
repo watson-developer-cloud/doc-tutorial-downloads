@@ -124,9 +124,15 @@ if [ ${COMMAND} = 'restore' ] ; then
   SDU_API_REPLICAS=`kubectl get ${SDU_RESOURCE_TYPE} ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${SDU_RELEASE_NAME},run=sdu`
   DFS_INDUCTION_RESOURCE=`kubectl get deployment ${KUBECTL_ARGS} -o jsonpath='{.items[0].metadata.name}' -l release=${DFS_RELEASE_NAME},run=dfs-induction`
   DFS_INDUCTION_REPLICAS=`kubectl get deployment ${KUBECTL_ARGS} -o jsonpath='{.items[0].spec.replicas}' -l release=${DFS_RELEASE_NAME},run=dfs-induction`
+  if [ ${SDU_API_REPLICAS} -eq 0 ] ; then
+    SDU_API_REPLICAS=1
+  fi
+  if [ ${DFS_INDUCTION_REPLICAS} -eq 0 ] ; then
+    DFS_INDUCTION_REPLICAS=1
+  fi
+  trap "scale_resource sts ${SDU_API_RESOURCE} ${SDU_API_REPLICAS} false; scale_resource deployment ${DFS_INDUCTION_RESOURCE} ${DFS_INDUCTION_REPLICAS} false" 0 1 2 3 15
   scale_resource deployment ${DFS_INDUCTION_RESOURCE} 0 false
   scale_resource sts ${SDU_API_RESOURCE} 0 true
-  trap "scale_resource sts ${SDU_API_RESOURCE} ${SDU_API_REPLICAS} false; scale_resource deployment ${DFS_INDUCTION_RESOURCE} ${DFS_INDUCTION_REPLICAS} false" 0 1 2 3 15
 
   brlog "INFO" "Start restore postgresql: ${BACKUP_FILE}"
 
