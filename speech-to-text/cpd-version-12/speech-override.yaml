@@ -5,6 +5,22 @@ tags:
   sttRuntime: true
   ttsRuntime: true
 
+sttRuntime:
+  images:
+    miniomc:
+      tag:
+        1.0.5
+sttAMPatcher:
+  images:
+    miniomc:
+      tag:
+        1.0.5
+ttsRuntime:
+  images:
+    miniomc:
+      tag:
+        1.0.5
+
 affinity: {}
 
 global:
@@ -44,7 +60,7 @@ global:
       memoryRequest: 256Mi
 
       #Storage
-      storageClassName: "portworx-sc"
+      storageClassName: "portworx-shared-gp3"
 
       #Secrets
       authSecretName: minio
@@ -70,7 +86,7 @@ global:
       memoryLimit: 256Mi
 
       #Storage
-      storageClassName: "portworx-sc"
+      storageClassName: "portworx-shared-gp3"
       pvEnabled: true
       pvSize: 5Gi
       useDynamicProvisioning: true
@@ -101,9 +117,9 @@ global:
       databaseStorageRequest: "5Gi"
 
       #Storage configuration
-      databaseStorageClass: "portworx-sc"
-      databaseArchiveStorageClass: "portworx-sc"
-      databaseWalStorageClass: "portworx-sc"
+      databaseStorageClass: "portworx-shared-gp3"
+      databaseArchiveStorageClass: "portworx-shared-gp3"
+      databaseWalStorageClass: "portworx-shared-gp3"
       databasePort: 5432
 
       #Secrets
