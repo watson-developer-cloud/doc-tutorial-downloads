@@ -57,7 +57,7 @@ validate_version(){
 
 get_version(){
   if [ -n "`kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
-    if [ "`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
+    if kubectl get pod ${KUBECTL_ARGS} -l "app.kubernetes.io/name=discovery,run=management" -o jsonpath="{..image}" | tr -s '[[:space:]]' '\n' | grep "wd-management:12.0.4-1049" > /dev/null ; then
       echo "2.1.3"
     else
       echo "2.1.4"
@@ -446,8 +446,17 @@ stop_ingestion(){
   echo
 }
 
+get_migrator_tag(){
+  local wd_version=`get_version`
+  if [ "${wd_version}" = "2.1.3" ] ; then
+    echo "12.0.4-1048"
+  elif [ "${wd_version}" = "2.1.4" ] ; then
+    echo "12.0.5-2016"
+  fi
+}
+
 launch_migrator_job(){
-  MIGRATOR_TAG=${MIGRATOR_TAG:-12.0.4-1048}
+  MIGRATOR_TAG=`get_migrator_tag`
   MIGRATOR_JOB_NAME="wd-migrator-job"
   MIGRATOR_JOB_TEMPLATE="${SCRIPT_DIR}/src/migrator-job-template.yml"
   MIGRATOR_JOB_FILE="${SCRIPT_DIR}/src/migrator-job.yml"
@@ -458,9 +467,8 @@ launch_migrator_job(){
   MIGRATOR_MEMORY_LIMITS="${MIGRATOR_MEMORY_LIMITS:-4Gi}"
   MIGRATOR_MAX_HEAP="${MIGRATOR_MAX_HEAP:-3g}"
 
-  WD_MIGRATOR_REPO=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.dockerImageRepository}"`
-  WD_MIGRATOR_TAG=`kubectl ${KUBECTL_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`
-  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
+  WD_UTIL_IMAGE=`kubectl ${KUBECTL_ARGS} get pods -o jsonpath="{..image}" |tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils`
+  WD_MIGRATOR_IMAGE="${WD_UTIL_IMAGE%wd-utils*}wd-migrator:${MIGRATOR_TAG}"
   PG_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=postgresql -o jsonpath="{.items[0].metadata.name}"`
   PG_SECRET=`kubectl ${KUBECTL_ARGS} get secret -l release=${DATA_SOURCE_RELEASE_NAME},helm.sh/chart=postgresql -o jsonpath="{.items[*].metadata.name}"`
   ETCD_CONFIGMAP=`kubectl get ${KUBECTL_ARGS} configmap -l release=${DATA_SOURCE_RELEASE_NAME},app.kubernetes.io/component=etcd -o jsonpath="{.items[0].metadata.name}"`

@@ -1,6 +1,7 @@
 export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
 export WD_CMD_COMPLETION_TOKEN="completed_wd_command"
 export DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
+export BACKUP_RESTORE_LOG_DIR="${BACKUP_RESTORE_LOG_DIR:-wd-backup-restore-logs-`date "+%Y%m%d_%H%M%S"`}"
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
   "ERROR") export LOG_LEVEL_NUM=0;;
   "WARN")  export LOG_LEVEL_NUM=1;;
@@ -59,7 +60,8 @@ validate_version(){
 
 get_version(){
   if [ -n "`oc get pod ${OC_ARGS} -l release=${TENANT_NAME},app=operator,service=discovery`" ] ; then
-    echo "2.2.0"
+    local version=`oc get wd ${OC_ARGS} -l release=${TENANT_NAME} -o jsonpath='{.items[0].spec.version}'`
+    echo "${version}"
   elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
     if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
       echo "2.1.3"
@@ -73,27 +75,28 @@ get_version(){
   fi
 }
 
-get_version_num(){
-  case "$1" in
-    "2.1") echo 1;;
-    "2.1.2") echo 2;;
-    "2.1.3") echo 3;;
-    "2.1.4") echo 4;;
-    "2.2.0") echo 5;;
-    *)     echo 0;;
-  esac
-}
-
 compare_version(){
-  VER_1=`get_version_num "$1"`
-  VER_2=`get_version_num "$2"`
-  if [ ${VER_1} -lt ${VER_2} ] ; then
-    echo "-1"
-  elif [ ${VER_1} -eq ${VER_2} ] ; then
-    echo 0
-  else
-    echo 1
-  fi
+  VER_1=(${1//./ })
+  VER_2=(${2//./ })
+  for ((i = 0; i <= ${#VER_1[@]} || i <= ${#VER_2[@]}; i++))
+  do
+      if [ -z "${VER_1[$i]+UNDEFINE}" ] && [ -z "${VER_2[$i]+UNDEFINE}" ] ; then
+        echo 0
+        break;
+      elif [ -z "${VER_1[$i]+UNDEFINE}" ] ; then
+        echo  "-1"
+        break;
+      elif [ -z "${VER_2[$i]+UNDEFINE}" ] ; then
+        echo "1"
+        break;
+      elif [ ${VER_1[$i]} -lt ${VER_2[$i]} ] ; then
+        echo "-1"
+        break;
+      elif [ ${VER_1[$i]} -gt ${VER_2[$i]} ] ; then
+        echo 1
+        break;
+      fi
+  done
 }
 
 get_backup_version(){
@@ -332,7 +335,7 @@ start_minio_port_forward(){
 keep_minio_port_forward(){
   while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ]
   do
-    oc ${OC_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} > /dev/null &
+    oc ${OC_ARGS} port-forward svc/${MINIO_SVC} ${MINIO_FORWARD_PORT}:${MINIO_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-foward.log" &
     PORT_FORWARD_PID=$!
     while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ] && kill -0 ${PORT_FORWARD_PID} &> /dev/null
     do
@@ -425,6 +428,15 @@ quiesce(){
   echo
   brlog "INFO" "Quiesced"
   echo
+}
+
+get_migrator_tag(){
+  local wd_version=`get_version`
+  if [ "${wd_version}" = "2.2.0" ] ; then
+    echo "12.0.6-2031"
+  else
+    echo "12.0.7-3010"
+  fi
 }
 
 launch_migrator_job(){
@@ -543,6 +555,11 @@ run_cmd_in_pod(){
   shift
   WD_CMD_FILE="wd-br-cmd.sh"
   WD_CMD_LOG="wd-br-cmd.log"
+  cat <<EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+==========================
+${cmd}
+--------------------------
+EOF
 
   cat <<EOF >| ${TMP_WORK_DIR}/${WD_CMD_FILE}
 trap "touch /tmp/${WD_CMD_COMPLETION_TOKEN}" 0 1 2 3 15
@@ -555,5 +572,15 @@ EOF
   oc cp $@ ${TMP_WORK_DIR}/${WD_CMD_FILE} ${pod}:/tmp/${WD_CMD_FILE}
   oc exec $@ ${pod} -- bash -c "rm -rf /tmp/${WD_CMD_COMPLETION_TOKEN} && /tmp/${WD_CMD_FILE} &"
   wait_cmd ${pod} $@
-  oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}"
+  oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+}
+
+add_env_to_job_yaml(){
+  local env_name=$1
+  shift
+  local env_value=$1
+  shift
+  local yaml_file=$1
+  shift
+  sed -i -e "s/          env:/          env:\n            - name: ${env_name}\n              value: \"${env_value}\"/" "${yaml_file}"
 }
