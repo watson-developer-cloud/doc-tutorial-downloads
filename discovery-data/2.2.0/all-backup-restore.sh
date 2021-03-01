@@ -17,6 +17,7 @@ ${TAB}$(basename ${0}) (backup|restore) [-f backupFile] [options]
 Options:
 ${TAB}--help, -h${TAB}${TAB}${TAB}${TAB}${TAB}Show help
 ${TAB}--file, -f${TAB}${TAB}${TAB}${TAB}${TAB}Speccify backup file
+${TAB}--log-output-dir="<directory_path>"${TAB}${TAB}Specify outout direcotry of detailed component logs
 
 Options (Advanced):
 Basically, you don't need these advanced options.
@@ -29,6 +30,7 @@ ${TAB}--etcd-archive-option="<tar_option>"${TAB}Tar options used on archiving th
 ${TAB}--skip-verify-archive${TAB}${TAB}${TAB}${TAB}Skip the all verifying process of the archive.
 ${TAB}--skip-verify-backup${TAB}${TAB}${TAB}${TAB}Skip verifying the backup file.
 ${TAB}--skip-verify-datastore-archive${TAB}${TAB}${TAB}Skip verifying the archive of datastores.
+${TAB}--use-job${TAB}${TAB}${TAB}${TAB}${TAB}Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if it fail to transfer data to MinIO.
 EOF
 }
 
@@ -69,6 +71,10 @@ do
       BACKUP_FILE="$2"
       shift 2
       ;;
+    --log-output-dir=*)
+      export BACKUP_RESTORE_LOG_DIR="${1#--log-output-dir=}"
+      shift 1
+      ;;
     --archive-on-local)
       export ARCHIVE_ON_LOCAL=true
       shift 1
@@ -99,6 +105,10 @@ do
       ;;
     --skip-verify-datastore-archive)
       export VERIFY_DATASTORE_ARCHIVE=false
+      shift 1
+      ;;
+    --use-job)
+      export BACKUP_RESTORE_IN_POD=true
       shift 1
       ;;
     -- | -)
@@ -180,6 +190,9 @@ else
   MC_COMMAND=${PWD}/${TMP_WORK_DIR}/mc
 fi
 export MC_COMMAND=${MC_COMMAND}
+
+mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
+brlog "INFO" "Component log directory: ${BACKUP_RESTORE_LOG_DIR}"
 
 run () {
   for COMP in ${ALL_COMPONENT[@]}

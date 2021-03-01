@@ -12,6 +12,7 @@ source "${SCRIPT_DIR}/lib/function.bash"
 OC_ARGS="${OC_ARGS:-}"
 WDDATA_BACKUP="wddata.tar.gz"
 TMP_WORK_DIR="tmp/wddata"
+CURRENT_COMPONENT="wddata"
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
@@ -47,6 +48,8 @@ else
 fi
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
+
+mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 
 # backup wddata
 if [ ${COMMAND} = 'backup' ] ; then

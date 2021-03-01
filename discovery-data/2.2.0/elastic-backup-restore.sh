@@ -19,7 +19,10 @@ ELASTIC_BACKUP_BUCKET="elastic-backup"
 ELASTIC_REQUEST_TIMEOUT="30m"
 ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-60}
 ELASTIC_WAIT_GREEN_STATE=${ELASTIC_WAIT_GREEN_STATE:-"false"}
+ELASTIC_JOB_FILE="${SCRIPT_DIR}/src/elastic-backup-restore-job.yml"
+BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
 TMP_WORK_DIR="tmp/elastic_workspace"
+CURRENT_COMPONENT="elastic"
 MINIO_SCRIPTS=${SCRIPT_DIR}/minio-backup-restore.sh
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 
@@ -66,6 +69,87 @@ MINIO_SECRET_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.s
 MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-https://localhost:$MINIO_FORWARD_PORT}
 
 rm -rf ${TMP_WORK_DIR}
+mkdir -p ${TMP_WORK_DIR}
+mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
+
+if "${BACKUP_RESTORE_IN_POD}" ; then
+  brlog "INFO" "Start ${COMMAND} elasticsearch..."
+  BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
+  ELASTIC_BACKUP_RESTORE_SCRIPTS="elastic-backup-restore-in-pod.sh"
+  ELASTIC_BACKUP_RESTORE_JOB="wd-discovery-elastic-backup-restore"
+  ELASTIC_JOB_TEMPLATE="${SCRIPT_DIR}/src/minio-client-job-template.yml"
+  MC_CPU_LIMITS="${MC_CPU_LIMITS:-800m}"
+  MC_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}"
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  SERVICE_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
+  WD_MIGRATOR_TAG="`get_migrator_tag`"
+  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
+  ELASTIC_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=elastic-cxn -o jsonpath="{.items[0].metadata.name}"`
+  ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
+  MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  CURRENT_TZ=`date "+%z" | tr -d '0'`
+  if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
+    TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
+  else
+    TZ_OFFSET="UTC+`echo ${CURRENT_TZ} | tr -d '-'`"
+  fi
+
+  sed -e "s/#namespace#/${NAMESPACE}/g" \
+    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
+    -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
+    -e "s/#elastic-secret#/${ELASTIC_SECRET}/g" \
+    -e "s/#elastic-configmap#/${ELASTIC_CONFIGMAP}/g" \
+    -e "s/#minio-secret#/${MINIO_SECRET}/g" \
+    -e "s/#minio-configmap#/${MINIO_CONFIGMAP}/g" \
+    -e "s/#cpu-limit#/${MC_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${MC_MEMORY_LIMITS}/g" \
+    -e "s|#command#|./${ELASTIC_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
+    -e "s/#job-name#/${ELASTIC_BACKUP_RESTORE_JOB}/g" \
+    -e "s/#tenant#/${TENANT_NAME}/g" \
+    "${ELASTIC_JOB_TEMPLATE}" > "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "VERIFY_DATASTORE_ARCHIVE" "${VERIFY_DATASTORE_ARCHIVE}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "ELASTIC_STATUS_CHECK_INTERVAL" "${ELASTIC_STATUS_CHECK_INTERVAL}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "ELASTIC_WAIT_GREEN_STATE" "${ELASTIC_WAIT_GREEN_STATE}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${ELASTIC_JOB_FILE}"
+
+  oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}" &> /dev/null || true
+  oc ${OC_ARGS} apply -f "${ELASTIC_JOB_FILE}"
+  get_job_pod "app.kubernetes.io/component=${ELASTIC_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
+  wait_job_running ${POD}
+  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+
+  if [ "${COMMAND}" = "restore" ] ; then
+    kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
+  fi
+  oc exec ${POD} -- touch /tmp/wexdata_copied
+  brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
+  while :
+  do
+    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+      brlog "INFO" "Completed ${COMMAND} job"
+      break;
+    else
+      oc logs -f ${POD} --since=5s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
+    fi
+  done
+  if [ "${COMMAND}" = "backup" ] ; then
+    kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
+  fi
+  oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}"
+  rm -rf ${TMP_WORK_DIR}
+  if [ -z "$(ls tmp)" ] ; then
+    rm -rf tmp
+  fi
+  exit 0
+fi
+
 mkdir -p ${TMP_WORK_DIR}/.mc
 if [ -n "${MC_COMMAND+UNDEF}" ] ; then
   MC=${MC_COMMAND}
@@ -79,12 +163,13 @@ MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
 # backup elastic search
 if [ ${COMMAND} = 'backup' ] ; then
   BACKUP_FILE=${BACKUP_FILE:-"elastic_`date "+%Y%m%d_%H%M%S"`.snapshot"}
-  BACKUP_SCRIPTS="elastic_backup.sh"
   brlog "INFO" "Start backup elasticsearch..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  fi
   stop_minio_port_forward
   brlog "INFO" "Taking snapshot..."
   run_cmd_in_pod ${ELASTIC_POD} 'S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
@@ -96,11 +181,25 @@ if [ ${COMMAND} = 'backup' ] ; then
     snapshot_status=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0].state"' ${OC_ARGS} -c elasticsearch`
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
-      brlog "INFO" "`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch`"
+      run_cmd_in_pod ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
       brlog "INFO" "Transfering snapshot from MinIO"
-      start_minio_port_forward
-      ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} > /dev/null
-      stop_minio_port_forward
+      while true;
+      do
+        cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+===================================================
+${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
+===================================================
+EOF
+        start_minio_port_forward
+        ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+        RC=$?
+        stop_minio_port_forward
+        echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+        if [ $RC -eq 0 ] ; then
+          break
+        fi
+        brlog "WARN" "Some file could not be transfered. Retrying..."
+      done
       brlog "INFO" "Archiving sanpshot..."
       tar ${ELASTIC_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
       break;
@@ -149,9 +248,26 @@ if [ ${COMMAND} = 'restore' ] ; then
   if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
     ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
-  ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} > /dev/null
   stop_minio_port_forward
-
+  set +e
+  while true;
+  do
+    cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+===================================================
+${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
+===================================================
+EOF
+    start_minio_port_forward
+    ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    RC=$?
+    stop_minio_port_forward
+    echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    if [ $RC -eq 0 ] ; then
+      break
+    fi
+    brlog "WARN" "Some file could not be transfered. Retrying..."
+  done
+  set -e
   brlog "INFO" "Start Restoring snapshot"
   run_cmd_in_pod ${ELASTIC_POD} 'S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" && \

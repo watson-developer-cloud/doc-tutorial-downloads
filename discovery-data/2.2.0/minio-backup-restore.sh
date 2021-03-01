@@ -8,10 +8,13 @@ source "${SCRIPT_DIR}/lib/function.bash"
 
 # Setup the minio directories needed to create the backup file
 OC_ARGS="${OC_ARGS:-}" 
-MINIO_BACKUP="/tmp/minio_backup.tar.gz"
+MINIO_BACKUP="minio_backup.tar.gz"
 MINIO_BACKUP_DIR="${MINIO_BACKUP_DIR:-minio_backup}"
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 TMP_WORK_DIR="tmp/minio_workspace"
+MINIO_JOB_FILE="${SCRIPT_DIR}/src/minio-backup-restore-job.yml"
+BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
+CURRENT_COMPONENT="minio"
 MINIO_ELASTIC_BACKUP=${MINIO_ELASTIC_BACKUP:-false}
 ELASTIC_BACKUP_BUCKET="elastic-backup"
 SED_REG_OPT="`get_sed_reg_opt`"
@@ -58,8 +61,85 @@ MINIO_SECRET_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.s
 MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-https://localhost:$MINIO_FORWARD_PORT}
 
 rm -rf ${TMP_WORK_DIR}
+
+mkdir -p "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"
+mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
+
+if "${BACKUP_RESTORE_IN_POD}" ; then
+  BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
+  MINIO_BACKUP_RESTORE_SCRIPTS="minio-backup-restore-in-pod.sh"
+  MINIO_BACKUP_RESTORE_JOB="wd-discovery-minio-backup-restore"
+  MINIO_JOB_TEMPLATE="${SCRIPT_DIR}/src/minio-client-job-template.yml"
+  MC_CPU_LIMITS="${MC_CPU_LIMITS:-800m}"
+  MC_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}"
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  SERVICE_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
+  WD_MIGRATOR_TAG="`get_migrator_tag`"
+  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
+  ELASTIC_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=elastic-cxn -o jsonpath="{.items[0].metadata.name}"`
+  ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
+  MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  CURRENT_TZ=`date "+%z" | tr -d '0'`
+  if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
+    TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
+  else
+    TZ_OFFSET="UTC+`echo ${CURRENT_TZ} | tr -d '-'`"
+  fi
+
+  sed -e "s/#namespace#/${NAMESPACE}/g" \
+    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
+    -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
+    -e "s/#elastic-secret#/${ELASTIC_SECRET}/g" \
+    -e "s/#elastic-configmap#/${ELASTIC_CONFIGMAP}/g" \
+    -e "s/#minio-secret#/${MINIO_SECRET}/g" \
+    -e "s/#minio-configmap#/${MINIO_CONFIGMAP}/g" \
+    -e "s/#cpu-limit#/${MC_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${MC_MEMORY_LIMITS}/g" \
+    -e "s|#command#|./${MINIO_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
+    -e "s/#job-name#/${MINIO_BACKUP_RESTORE_JOB}/g" \
+    -e "s/#tenant#/${TENANT_NAME}/g" \
+    "${MINIO_JOB_TEMPLATE}" > "${MINIO_JOB_FILE}"
+  add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${MINIO_JOB_FILE}"
+  add_env_to_job_yaml "VERIFY_DATASTORE_ARCHIVE" "${VERIFY_DATASTORE_ARCHIVE}" "${MINIO_JOB_FILE}"
+  add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${MINIO_JOB_FILE}"
+
+  oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}" &> /dev/null || true
+  oc ${OC_ARGS} apply -f "${MINIO_JOB_FILE}"
+  get_job_pod "app.kubernetes.io/component=${MINIO_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
+  wait_job_running ${POD}
+  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/src/${MINIO_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+
+  if [ ${COMMAND} == "restore" ] ; then
+    kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
+  fi
+  oc exec ${POD} -- touch /tmp/wexdata_copied
+  brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
+  while :
+  do
+    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+      brlog "INFO" "Completed ${COMMAND} job"
+      break;
+    else
+      oc logs -f ${POD} --since=5s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
+    fi
+  done
+  if [ "${COMMAND}" = "backup" ] ; then
+    kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
+  fi
+  oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}"
+  rm -rf ${TMP_WORK_DIR}
+  if [ -z "$(ls tmp)" ] ; then
+    rm -rf tmp
+  fi
+  exit 0
+fi
+
 mkdir -p ${TMP_WORK_DIR}/.mc
-mkdir -p ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
 if [ -n "${MC_COMMAND+UNDEF}" ] ; then
   MC=${MC_COMMAND}
 else
@@ -90,7 +170,18 @@ if [ "${COMMAND}" = "backup" ] ; then
     done
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
-    ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} > /dev/null
+    set +e
+    while true;
+    do
+      ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      RC=$?
+      echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      if [ $RC -eq 0 ] ; then
+        break
+      fi
+      brlog "WARN" "Some file could not be transfered. Retrying..."
+    done
+    set -e
     cd - > /dev/null
   done
   stop_minio_port_forward
@@ -129,7 +220,18 @@ if [ "${COMMAND}" = "restore" ] ; then
       if [ "${bucket}" = "discovery-dfs" ] ; then
         continue
       fi
-      ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} > /dev/null
+      set +e
+      while true;
+      do
+        ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+        RC=$?
+        echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+        if [ $RC -eq 0 ] ; then
+          break
+        fi
+        brlog "WARN" "Some file could not be transfered. Retrying..."
+      done
+      set -e
     fi
   done
   stop_minio_port_forward

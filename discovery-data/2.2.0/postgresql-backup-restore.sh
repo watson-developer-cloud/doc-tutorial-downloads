@@ -16,6 +16,7 @@ PG_BACKUP_PREFIX="/tmp/${PG_BACKUP_DIR}/pg_"
 PG_BACKUP_SUFFIX=".dump"
 PG_SCRIPT_VERSION="2.1.3"
 TMP_WORK_DIR="tmp/pg_backup"
+CURRENT_COMPONENT="postgresql"
 POSTGRES_CONFIG_JOB="wire-postgres"
 
 printUsage() {
@@ -58,6 +59,7 @@ ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
+mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
 PG_POD=""
 
@@ -117,8 +119,13 @@ if [ ${COMMAND} = 'restore' ] ; then
   run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
   export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
   export PGHOST=${HOSTNAME} && \
-  psql -d dadmin -c "COPY tenants TO '"'"'/tmp/tenants'"'"'"' ${OC_ARGS} | grep COPY > /dev/null
-  kube_cp_to_local ${PG_POD} "tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt" "/tmp/tenants" ${OC_ARGS}
+  psql -d dadmin -c "COPY tenants TO '"'"'/tmp/tenants'"'"'"' ${OC_ARGS}
+  TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
+  kube_cp_to_local ${PG_POD} "${TENANT_FILE}" "/tmp/tenants" ${OC_ARGS}
+  if ! cat "${TENANT_FILE}" | grep "default" > /dev/null ; then
+    brlog "ERROR" "Can not get tenant information"
+    exit 1
+  fi
   run_cmd_in_pod ${PG_POD} 'rm -f /tmp/tenants' ${OC_ARGS}
 
   if "${ARCHIVE_ON_LOCAL}" ; then

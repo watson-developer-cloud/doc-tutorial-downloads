@@ -5,9 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/component: wd-migrator
     app.kubernetes.io/instance: core
-    app.kubernetes.io/managed-by: Tiller
     app.kubernetes.io/name: discovery
-    helm.sh/chart: ibm-watson-discovery-core-prod
     service: discovery
   namespace: @namespace@
 spec:

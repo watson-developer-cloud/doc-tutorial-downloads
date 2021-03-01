@@ -8,7 +8,7 @@ elastic_updates(){
   if ls "$UPDATE_DIR"/*.elupdate &> /dev/null ; then
     for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate; do
       value=$(<${ELASTIC_COMMAND})
-      oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash -c "${value}"
+      oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
   if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.2"` -le 0 ] ; then 
@@ -33,7 +33,7 @@ etcd_updates(){
         export ETCDCTL_CACERT=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt && \
         export ETCDCTL_KEY=/etc/etcdtls/operator/etcd-tls/etcd-client.key && \
         export ETCDCTL_ENDPOINTS=https://${ETCD_SERVICE}:2379 && \
-        ${value}"
+        ${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
 }
@@ -54,7 +54,7 @@ postgresql_updates(){
       oc ${OC_ARGS} exec ${PG_POD} -- bash -c "export PGUSER=\${STKEEPER_PG_SU_USERNAME} && \
         export PGPASSWORD=\${STKEEPER_PG_SU_PASSWORD} && \
         export PGHOST=\${HOSTNAME} && \
-        ${value}"
+        ${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
 }
@@ -63,7 +63,7 @@ wddata_updates(){
   if ls "$UPDATE_DIR"/*.wdupdate &> /dev/null ; then
     for WDDATA_COMMAND in "$UPDATE_DIR"/*.wdupdate; do
       value=$(<${WDDATA_COMMAND})
-      oc ${OC_ARGS} exec ${GATEWAY_POD} -- bash -c "${value}"
+      oc ${OC_ARGS} exec ${GATEWAY_POD} -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
 }
@@ -72,7 +72,7 @@ minio_updates(){
   if ls "$UPDATE_DIR"/*.minioupdate &> /dev/null ; then
     for WDDATA_COMMAND in "$UPDATE_DIR"/*.minioupdate; do
       value=$(<${WDDATA_COMMAND})
-      oc ${OC_ARGS} exec ${MINIO_POD} -- bash -c "${value}"
+      oc ${OC_ARGS} exec ${MINIO_POD} -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
 }

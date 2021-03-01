@@ -15,6 +15,7 @@ ETCD_BACKUP_DIR="/tmp/etcd_backup"
 ETCD_BACKUP_FILE="${ETCD_BACKUP_DIR}/etcd_snapshot.db"
 PG_SERVICE_FILE="${ETCD_BACKUP_DIR}/pg_service_name.txt"
 TMP_WORK_DIR="tmp/etcd_workspace"
+CURRENT_COMPONENT="etcd"
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [tenantName] [-f backupFile]"
@@ -48,6 +49,7 @@ ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
+mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
 ETCD_SERVICE=`oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l app=etcd | tr '[[:space:]]' '\n' | grep etcd-client`
 ETCD_SECRET=`oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root`
