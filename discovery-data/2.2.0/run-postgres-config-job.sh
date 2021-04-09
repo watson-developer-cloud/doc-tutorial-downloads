@@ -30,9 +30,7 @@ PG_JOB_FILE="${SCRIPT_DIR}/src/postgres-config-job.yml"
 
 brlog "INFO" "Start postgresql configuration"
 
-PG_CONFIG_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`configure-postgres"
-PG_CONFIG_TAG=${PG_CONFIG_TAG:-20201105-032403-878-1162f9e3}
-PG_CONFIG_IMAGE="${PG_CONFIG_REPO}:${PG_CONFIG_TAG}"
+PG_CONFIG_IMAGE=`oc ${OC_ARGS} get deploy -o jsonpath="{..image}" |tr -s '[[:space:]]' '\n' | sort | uniq | grep training-data-crud | sed -e "s/training-data-crud/configure-postgres/g"`
 PG_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}"`
 PG_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}"`
 NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
