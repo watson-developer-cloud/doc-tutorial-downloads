@@ -75,7 +75,12 @@ for tenants_file in `ls -t tmp_wd_tenants_*.txt` ; do
     fetch_cmd_result ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
       export PGHOST=${HOSTNAME} && \
-      if ! psql -d dadmin -t -c "SELECT COUNT (*) FROM tenants;" | grep "1" > /dev/null ; then psql -d dadmin -c "COPY tenants FROM '"'"'/tmp/tenants'"'"'" ; else echo "COPY" ; fi&& \
+      if ! psql -d dadmin -t -c "SELECT * FROM tenants;" | grep "default" > /dev/null ; then \
+        psql -d dadmin -c "TRUNCATE tenants" && \
+        psql -d dadmin -c "COPY tenants FROM '"'"'/tmp/tenants'"'"'" ;\
+      else\
+        echo "COPY" ;\
+      fi&& \
       rm -f /tmp/tenants' ${OC_ARGS} | grep COPY >& /dev/null
   fi
 done
