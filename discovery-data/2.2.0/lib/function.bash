@@ -413,7 +413,11 @@ quiesce(){
   brlog "INFO" "Quiescing"
   echo
 
-  trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+  if [ "$COMMAND" = "restore" ] ; then
+    trap "brlog 'ERROR' 'Error occur while running scripts.' ; unquiesce; ./post-restore.sh ${TENANT_NAME}; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+  else
+    trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+  fi
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
 
   # Check there are no DOCPROC application in yarn cue.
