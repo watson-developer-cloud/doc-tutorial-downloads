@@ -14,7 +14,6 @@ global:
     pullPolicy: "IfNotPresent"
 
   datastores:
-
     minio:
       tlsEnabled: true
       serviceAccountName: "ibm-minio-operator"
