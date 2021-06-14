@@ -61,7 +61,7 @@ validate_version(){
 get_version(){
   if [ -n "`oc get pod ${OC_ARGS} -l release=${TENANT_NAME},app=operator,service=discovery`" ] ; then
     local version=`oc get wd ${OC_ARGS} -l release=${TENANT_NAME} -o jsonpath='{.items[0].spec.version}'`
-    echo "${version}"
+    echo "${version%%-*}"
   elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
     if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
       echo "2.1.3"
