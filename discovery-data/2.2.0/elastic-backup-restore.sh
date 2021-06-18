@@ -128,7 +128,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
 
   if [ "${COMMAND}" = "restore" ] ; then
-    brlog "INFO" "Transfering backup data"
+    brlog "INFO" "Transferring backup data"
     kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
   fi
   oc ${OC_ARGS} exec ${POD} -- touch /tmp/wexdata_copied
@@ -144,7 +144,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
     fi
   done
   if [ "${COMMAND}" = "backup" ] ; then
-    brlog "INFO" "Transfering backup data"
+    brlog "INFO" "Transferring backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
     if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
       brlog "ERROR" "Backup file is broken, or does not exist."
@@ -193,7 +193,7 @@ if [ ${COMMAND} = 'backup' ] ; then
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
       run_cmd_in_pod ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
-      brlog "INFO" "Transfering snapshot from MinIO"
+      brlog "INFO" "Transferring snapshot from MinIO"
       cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
 ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
@@ -257,7 +257,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   brlog "INFO" "Extracting Archive..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   tar ${ELASTIC_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
-  brlog "INFO" "Transfering data to MinIO..."
+  brlog "INFO" "Transferring data to MinIO..."
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then

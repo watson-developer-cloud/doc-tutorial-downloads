@@ -81,7 +81,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   for DATABASE in $( psql -l | grep ${PGUSER} | cut -d "|" -f 1 | grep -v -e template -e postgres -e "^\s*$"); do pg_dump ${DATABASE} > '${PG_BACKUP_PREFIX}'${DATABASE}'${PG_BACKUP_SUFFIX}'; done && \
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${PG_SCRIPT_VERSION} ${OC_ARGS}
   if "${ARCHIVE_ON_LOCAL}" ; then 
-    brlog "INFO" "Transfering backup files"
+    brlog "INFO" "Transferring backup files"
     kube_cp_to_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR}"
     brlog "INFO" "Archiving data"
@@ -131,7 +131,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   if "${ARCHIVE_ON_LOCAL}" ; then
     brlog "INFO" "Extracting archive"
     tar ${PG_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
-    brlog "INFO" "Transfering backup files"
+    brlog "INFO" "Transferring backup files"
     kube_cp_from_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
   else
     brlog "INFO" "Transferting archive..."

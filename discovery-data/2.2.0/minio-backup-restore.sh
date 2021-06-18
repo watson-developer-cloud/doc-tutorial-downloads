@@ -117,7 +117,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${MINIO_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
 
   if [ ${COMMAND} == "restore" ] ; then
-    brlog "INFO" "Transfering backup data"
+    brlog "INFO" "Transferring backup data"
     kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
   fi
   oc ${OC_ARGS} exec ${POD} -- touch /tmp/wexdata_copied
@@ -133,7 +133,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
     fi
   done
   if [ "${COMMAND}" = "backup" ] ; then
-    brlog "INFO" "Transfering backup data"
+    brlog "INFO" "Transferring backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
     if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
       brlog "ERROR" "Backup file is broken, or does not exist."

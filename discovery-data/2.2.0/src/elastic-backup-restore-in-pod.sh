@@ -53,7 +53,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
       curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r ".snapshots[0]"
-      brlog "INFO" "Transfering snapshot from MinIO"
+      brlog "INFO" "Transferring snapshot from MinIO"
       while true;
       do
         cat << EOF >> "${ELASTIC_LOG}"
@@ -101,7 +101,7 @@ elif [ "${COMMAND}" = "restore" ] ; then
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   tar ${ELASTIC_TAR_OPTIONS[@]} -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   rm -f ${ELASTIC_BACKUP}
-  brlog "INFO" "Transfering data to MinIO..."
+  brlog "INFO" "Transferring data to MinIO..."
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
     ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null

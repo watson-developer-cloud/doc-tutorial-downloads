@@ -69,7 +69,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   echo -n '${PG_SERVICE_NAME}' > ${PG_SERVICE_FILE} && \
   tar zcf ${ETCD_BACKUP} -C ${ETCD_BACKUP_DIR} ."
   wait_cmd ${ETCD_POD} "tar zcf" ${KUBECTL_ARGS}
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_to_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${KUBECTL_ARGS}
   kubectl ${KUBECTL_ARGS} exec ${ETCD_POD} --  bash -c "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP}"
   brlog "INFO" "Verifying backup..."
@@ -94,7 +94,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   ETCD_POD=`kubectl get pods ${KUBECTL_ARGS} -o jsonpath="{.items[0].metadata.name}" -l release=${RELEASE_NAME},helm.sh/chart=etcd`
   REPLACE_SVC_STRING="-watson-discovery-postgresql"
   brlog "INFO" "Start restore etcd: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Restoring data..."
   kubectl ${KUBECTL_ARGS} exec ${ETCD_POD} -- bash -c 'export ETCDCTL_API=3 && \

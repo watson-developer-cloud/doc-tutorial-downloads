@@ -68,7 +68,7 @@ kubectl cp ${KUBECTL_ARGS} ${TMP_WORK_DIR}/${ETCD_SNAPSHOT_FILE} ${GATEWAY_POD}:
 MIGRATION_FILES=`runPythonScripts ${GATEWAY_POD} ${LIST_FILES_SCRIPT} /tmp/${ETCD_SNAPSHOT_FILE}`
 tar zcf ${TMP_WORK_DIR}/${USER_DATA_ARCHIVE} -C ${USER_DATA_DIR} ${MIGRATION_FILES}
 
-brlog "INFO" "Transfering the migration files"
+brlog "INFO" "Transferring the migration files"
 kubectl cp ${KUBECTL_ARGS} ${TMP_WORK_DIR}/${USER_DATA_ARCHIVE} ${GATEWAY_POD}:/tmp/${USER_DATA_ARCHIVE}
 
 kubectl exec ${KUBECTL_ARGS} ${GATEWAY_POD} -- bash -c "mkdir -p /tmp/mnt && tar xf /tmp/${USER_DATA_ARCHIVE} -C /tmp/mnt"

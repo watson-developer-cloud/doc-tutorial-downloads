@@ -50,7 +50,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c 'rm -f /tmp/'${WDDATA_BACKUP}' && \
   tar zcf /tmp/'${WDDATA_BACKUP}' --exclude ".nfs*" --exclude wexdata/logs --exclude "wexdata/zing/data/crawler/*/temp" wexdata/* ; code=$?; if [ $code -ne 0 -a $code -ne 1 ] ; then echo "Fatal Error"; exit $code; fi'
   wait_cmd ${GATEWAY_POD} "tar zcf" ${KUBECTL_ARGS}
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_to_local ${GATEWAY_POD} "${BACKUP_FILE}" "/tmp/${WDDATA_BACKUP}" ${KUBECTL_ARGS}
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} --  bash -c "rm -f /tmp/${WDDATA_BACKUP}"
   brlog "INFO" "Verifying backup..."
@@ -73,7 +73,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
   brlog "INFO" "Start restore wddata: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${GATEWAY_POD} "${BACKUP_FILE}" "/tmp/${WDDATA_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Restoring data..."
   kubectl exec ${GATEWAY_POD} ${KUBECTL_ARGS} -- bash -c "tar xf /tmp/${WDDATA_BACKUP} --exclude *.lck ; rm -f /tmp/${WDDATA_BACKUP}"

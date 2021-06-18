@@ -71,7 +71,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   etcdctl get --prefix '/' -w fields > ${ETCD_BACKUP_FILE}" ${OC_ARGS}
 
   if "${ARCHIVE_ON_LOCAL}" ; then 
-    brlog "INFO" "Transfering backup files"
+    brlog "INFO" "Transferring backup files"
     mkdir -p "`dirname ${TMP_WORK_DIR}${ETCD_BACKUP_DIR}`"
     kube_cp_to_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${ETCD_POD} -- bash -c "rm -rf ${ETCD_BACKUP_DIR}"
@@ -109,7 +109,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     brlog "INFO" "Extracting archive"
     mkdir -p "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
     tar ${ETCD_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
-    brlog "INFO" "Transfering backup files"
+    brlog "INFO" "Transferring backup files"
     kube_cp_from_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
   else
     brlog "INFO" "Transferting archive..."

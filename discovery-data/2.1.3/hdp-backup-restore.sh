@@ -68,7 +68,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
   brlog "INFO" "Start restore hadoop: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${HDP_POD} "${BACKUP_FILE}" "${HDP_BACKUP}" ${KUBECTL_ARGS} -c hdp-worker
   brlog "INFO" "Extracting archive..."
   kubectl exec -c hdp-worker ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \

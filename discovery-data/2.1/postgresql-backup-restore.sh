@@ -54,7 +54,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   touch /tmp/'${PG_BACKUP_DIR}'/version_'${BACKUP_VERSION}' && \
   tar zcf '${PG_BACKUP}' -C /tmp '${PG_BACKUP_DIR}
   wait_cmd ${PG_POD} "tar zcf" ${KUBECTL_ARGS}
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${KUBECTL_ARGS}
   kubectl ${KUBECTL_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
   brlog "INFO" "Verifying backup..."
@@ -122,7 +122,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     fi
   done
   brlog "INFO" "Start restore postgresql: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Restoring data..."
   kubectl exec ${KUBECTL_ARGS} ${PG_POD} -- bash -c 'export PGUSER=${PGUSER:-${STKEEPER_PG_SU_USERNAME}} && \

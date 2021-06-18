@@ -53,7 +53,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   kubectl exec ${HDP_POD} ${KUBECTL_ARGS} --  bash -c "cd /tmp && \
   tar zcf ${HDP_BACKUP} ${HDP_BACKUP_DIR}"
   wait_cmd ${HDP_POD} "tar zcf" ${KUBECTL_ARGS}
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_to_local ${HDP_POD} "${BACKUP_FILE}" "${HDP_BACKUP}" ${KUBECTL_ARGS}
   kubectl exec ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "rm -rf ${HDP_BACKUP} /tmp/${HDP_BACKUP_DIR}"
   brlog "INFO" "Verifying backup..."
@@ -76,7 +76,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
   brlog "INFO" "Start restore hadoop: ${BACKUP_FILE}"
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${HDP_POD} "${BACKUP_FILE}" "${HDP_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Extracting data..."
   kubectl exec ${HDP_POD} ${KUBECTL_ARGS} -- bash -c "cd /tmp && \
