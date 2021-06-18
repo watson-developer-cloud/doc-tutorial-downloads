@@ -68,7 +68,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'cd ${ELASTIC_BACKUP_DIR} && \
   tar czf /tmp/'${ELASTIC_BACKUP}' ./*'
   wait_cmd ${ELASTIC_POD} "tar czf" ${KUBECTL_ARGS}
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_to_local ${ELASTIC_POD} "${BACKUP_FILE}" "/tmp/${ELASTIC_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Clean up snapshot..."
   kubectl exec ${ELASTIC_POD} ${KUBECTL_ARGS} --  bash -c 'if [[ ! -v ES_PORT ]] ; then if [ -d "/opt/tls/elastic" ] ; then export ES_PORT=9100 ; else export ES_PORT=9200 ; fi ; fi && \
@@ -96,7 +96,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     echo
     exit 1
   fi
-  brlog "INFO" "Transfering archive..."
+  brlog "INFO" "Transferring archive..."
   kube_cp_from_local ${ELASTIC_POD} "${BACKUP_FILE}" "/tmp/${ELASTIC_BACKUP}" ${KUBECTL_ARGS}
   brlog "INFO" "Extracting archive..."
   kubectl ${KUBECTL_ARGS} exec ${ELASTIC_POD} -- bash -c 'cd ${ELASTIC_BACKUP_DIR} && \

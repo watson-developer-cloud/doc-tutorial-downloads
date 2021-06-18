@@ -37,6 +37,10 @@ mkdir -p ${TMP_WORK_DIR}/.mc
 MC=mc
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
+MC_MIRROR_OPTS=( "" )
+if "${DISABLE_MC_MULTIPART:-true}" ; then
+  MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]}" --disable-multipart )
+fi
 
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
@@ -60,7 +64,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     set +e
     while true;
     do
-      ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
+      ${MC} ${MC_OPTS[@]} --quiet mirror ${MC_MIRROR_OPTS[@]} ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
       RC=$?
       echo "RC=${RC}"
       if [ $RC -eq 0 ] ; then
@@ -102,7 +106,7 @@ if [ "${COMMAND}" = "restore" ] ; then
       set +e
       while true;
       do
-        ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} 2>&1
+        ${MC} ${MC_OPTS[@]} --quiet mirror ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} 2>&1
         RC=$?
         echo "RC=${RC}"
         if [ $RC -eq 0 ] ; then

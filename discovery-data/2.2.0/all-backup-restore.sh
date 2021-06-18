@@ -12,25 +12,27 @@ TAB="$(printf '\t')"
 printUsage() {
 cat << EOF
 Usage:
-${TAB}$(basename ${0}) (backup|restore) [-f backupFile] [options]
+    $(basename ${0}) (backup|restore) [-f backupFile] [options]
 
 Options:
-${TAB}--help, -h${TAB}${TAB}${TAB}${TAB}${TAB}Show help
-${TAB}--file, -f${TAB}${TAB}${TAB}${TAB}${TAB}Speccify backup file
-${TAB}--log-output-dir="<directory_path>"${TAB}${TAB}Specify outout direcotry of detailed component logs
+    --help, -h                                 Show help
+    --file, -f                                 Speccify backup file
+    --log-output-dir="<directory_path>"        Specify outout direcotry of detailed component logs
 
 Options (Advanced):
 Basically, you don't need these advanced options.
 
-${TAB}--archive-on-local${TAB}${TAB}${TAB}${TAB}Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take much time.
-${TAB}--backup-archive-option="<tar_option>"${TAB}${TAB}Tar options for compression used on archiving the backup file. Default none.
-${TAB}--datastore-archive-option="<tar_option>"${TAB}Tar options for comporession used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
-${TAB}--postgresql-archive-option="<tar_option>"${TAB}Tar options for comporession used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
-${TAB}--etcd-archive-option="<tar_option>"${TAB}Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
-${TAB}--skip-verify-archive${TAB}${TAB}${TAB}${TAB}Skip the all verifying process of the archive.
-${TAB}--skip-verify-backup${TAB}${TAB}${TAB}${TAB}Skip verifying the backup file.
-${TAB}--skip-verify-datastore-archive${TAB}${TAB}${TAB}Skip verifying the archive of datastores.
-${TAB}--use-job${TAB}${TAB}${TAB}${TAB}${TAB}Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if it fail to transfer data to MinIO.
+    --archive-on-local                         Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take much time.
+    --backup-archive-option="<tar_option>"     Tar options for compression used on archiving the backup file. Default none.
+    --datastore-archive-option="<tar_option>"  Tar options for comporession used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
+    --postgresql-archive-option="<tar_option>" Tar options for comporession used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
+    --etcd-archive-option="<tar_option>"       Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
+    --skip-verify-archive                      Skip the all verifying process of the archive.
+    --skip-verify-backup                       Skip verifying the backup file.
+    --skip-verify-datastore-archive            Skip verifying the archive of datastores.
+    --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if fail to transfer data to MinIO.
+    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. It's size depends on ephemeral storage.
+    --enable-multipart                         Enable multipart upload of MinIO client on kubernetes job.
 EOF
 }
 
@@ -40,8 +42,9 @@ SCRIPT_DIR=$(dirname $0)
 
 set_scripts_version
 
-for OPT in "$@"
+while [[ $# -gt 0 ]]
 do
+  OPT=$1
   case $OPT in
     -h | --help)
       printUsage
@@ -57,18 +60,26 @@ do
       ;;
     -n | --namespace)
       if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
-          brlog "ERROR" "option requires an argument: $1"
-          exit 1
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
       fi
       OC_ARGS="${OC_ARGS} -n $2"
       shift 2
       ;;
     -f | --file)
       if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
-          brlog "ERROR" "option requires an argument: $1"
-          exit 1
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
       fi
       BACKUP_FILE="$2"
+      shift 2
+      ;;
+    --log-output-dir)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export BACKUP_RESTORE_LOG_DIR="$2"
       shift 2
       ;;
     --log-output-dir=*)
@@ -79,17 +90,49 @@ do
       export ARCHIVE_ON_LOCAL=true
       shift 1
       ;;
+    --backup-archive-option)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export BACKUPFILE_ARCHIVE_OPTION="$2"
+      shift 2
+      ;;
     --backup-archive-option=*)
       BACKUPFILE_ARCHIVE_OPTION="${1#--backup-archive-option=}"
       shift 1
+      ;;
+    --datastore-archive-option)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export DATASTORE_ARCHIVE_OPTION="$2"
+      shift 2
       ;;
     --datastore-archive-option=*)
       export DATASTORE_ARCHIVE_OPTION="${1#--datastore-archive-option=}"
       shift 1
       ;;
+    --postgresql-archive-option)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export PG_ARCHIVE_OPTION="$2"
+      shift 2
+      ;;
     --postgresql-archive-option=*)
       export PG_ARCHIVE_OPTION="${1#--postgresql-archive-option=}"
       shift 1
+      ;;
+    --etcd-archive-option)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export ETCD_ARCHIVE_OPTION="$2"
+      shift 2
       ;;
     --etcd-archive-option=*)
       export ETCD_ARCHIVE_OPTION="${1#--etcd-archive-option=}"
@@ -109,6 +152,22 @@ do
       ;;
     --use-job)
       export BACKUP_RESTORE_IN_POD=true
+      shift 1
+      ;;
+    --enable-multipart)
+      export DISABLE_MC_MULTIPART=false
+      shift 1
+      ;;
+    --pvc)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export JOB_PVC_NAME="$2"
+      shift 2
+      ;;
+    --pvc=*)
+      export JOB_PVC_NAME="${1#--pvc=}"
       shift 1
       ;;
     -- | -)
@@ -133,23 +192,6 @@ do
     esac
 done
 
-if [ -z "$COMMAND" ] ; then
-  brlog "ERROR" "Please specify command, backup or restore"
-  printUsage
-  exit 1
-fi
-if [ "$COMMAND" = "restore" ] ; then
-  if [ -z "${BACKUP_FILE}" ] ; then
-    brlog "ERROR" "Please specify backup file."
-    printUsage
-    exit 1
-  fi
-  if [ ! -e "${BACKUP_FILE}" ] ; then
-    brlog "ERROR" "no such file: ${BACKUP_FILE}"
-    echo
-    exit 1
-  fi
-fi
 
 TENANT_NAME="${TENANT_NAME:-wd}"
 BACKUPFILE_ARCHIVE_OPTION="${BACKUPFILE_ARCHIVE_OPTION-}"
@@ -160,6 +202,8 @@ else
 fi
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_BACKUPFILE=${VERIFY_BACKUPFILE:-$VERIFY_ARCHIVE}
+
+verify_args
 
 export WD_VERSION=`get_version`
 brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"

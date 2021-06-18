@@ -24,6 +24,10 @@ ELASTIC_LOG="${TMP_WORK_DIR}/elastic.log"
 
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
+MC_MIRROR_OPTS=( "" )
+if "${DISABLE_MC_MULTIPART:-true}" ; then
+  MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]}" --disable-multipart )
+fi
 MC=mc
 
 if [ -n "${ELASTIC_ARCHIVE_OPTION}" ] ; then
@@ -49,7 +53,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
       curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r ".snapshots[0]"
-      brlog "INFO" "Transfering snapshot from MinIO"
+      brlog "INFO" "Transferring snapshot from MinIO"
       while true;
       do
         cat << EOF >> "${ELASTIC_LOG}"
@@ -57,7 +61,7 @@ if [ "${COMMAND}" = "backup" ] ; then
 ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
 ===================================================
 EOF
-        ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+        ${MC} ${MC_OPTS[@]} mirror ${MC_MIRROR_OPTS[@]} wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
         RC=$?
         echo "RC=${RC}" >> "${ELASTIC_LOG}"
         if [ $RC -eq 0 ] ; then
@@ -97,7 +101,7 @@ elif [ "${COMMAND}" = "restore" ] ; then
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   tar ${ELASTIC_TAR_OPTIONS[@]} -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   rm -f ${ELASTIC_BACKUP}
-  brlog "INFO" "Transfering data to MinIO..."
+  brlog "INFO" "Transferring data to MinIO..."
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
     ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
@@ -109,7 +113,7 @@ elif [ "${COMMAND}" = "restore" ] ; then
 ${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
 ===================================================
 EOF
-    ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+    ${MC} ${MC_OPTS[@]} mirror ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
     RC=$?
     echo "RC=${RC}" >> "${ELASTIC_LOG}"
     if [ $RC -eq 0 ] ; then

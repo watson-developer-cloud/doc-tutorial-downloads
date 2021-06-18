@@ -115,6 +115,4 @@ spec:
             - mountPath: /tmp/backup-restore-workspace
               name: backup-restore-workspace
       volumes:
-        - name: backup-restore-workspace
-          emptyDir: {}
       terminationGracePeriodSeconds: 0

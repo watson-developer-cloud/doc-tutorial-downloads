@@ -91,7 +91,7 @@ if [ "${CMD}" = "migrate" ] ; then
   MIGRATION_FILES=`runPythonScripts ${GATEWAY_POD} ${LIST_FILES_SCRIPT} /tmp/${ETCD_SNAPSHOT_FILE}`
   tar zcf ${TMP_WORK_DIR}/${USER_DATA_ARCHIVE} -C ${USER_DATA_DIR} ${MIGRATION_FILES}
 
-  brlog "INFO" "Transfering migration files..."
+  brlog "INFO" "Transferring migration files..."
   kubectl cp ${KUBECTL_ARGS} "${USER_JSON_MAPPING}" ${GATEWAY_POD}:/tmp/${BOX_JSON_MAPPING}
   kubectl cp ${KUBECTL_ARGS} ${TMP_WORK_DIR}/${USER_DATA_ARCHIVE} ${GATEWAY_POD}:/tmp/${USER_DATA_ARCHIVE}
 
