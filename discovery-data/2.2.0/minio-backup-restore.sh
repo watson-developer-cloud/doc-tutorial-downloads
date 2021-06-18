@@ -16,6 +16,7 @@ MINIO_JOB_FILE="${SCRIPT_DIR}/src/minio-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
 CURRENT_COMPONENT="minio"
 MINIO_ELASTIC_BACKUP=${MINIO_ELASTIC_BACKUP:-false}
+DISABLE_MC_MULTIPART=${DISABLE_MC_MULTIPART:-true}
 ELASTIC_BACKUP_BUCKET="elastic-backup"
 SED_REG_OPT="`get_sed_reg_opt`"
 SCRIPT_DIR=${SCRIPT_DIR}
@@ -103,21 +104,23 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
     -e "s/#tenant#/${TENANT_NAME}/g" \
     "${MINIO_JOB_TEMPLATE}" > "${MINIO_JOB_FILE}"
   add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${MINIO_JOB_FILE}"
-  add_env_to_job_yaml "VERIFY_DATASTORE_ARCHIVE" "${VERIFY_DATASTORE_ARCHIVE}" "${MINIO_JOB_FILE}"
+  add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${MINIO_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${MINIO_JOB_FILE}"
+  add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${MINIO_JOB_FILE}"
 
   oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}" &> /dev/null || true
   oc ${OC_ARGS} apply -f "${MINIO_JOB_FILE}"
   get_job_pod "app.kubernetes.io/component=${MINIO_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
   wait_job_running ${POD}
-  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/src/${MINIO_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${MINIO_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
 
   if [ ${COMMAND} == "restore" ] ; then
+    brlog "INFO" "Transfering backup data"
     kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
   fi
-  oc exec ${POD} -- touch /tmp/wexdata_copied
+  oc ${OC_ARGS} exec ${POD} -- touch /tmp/wexdata_copied
   brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
   while :
   do
@@ -125,12 +128,20 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
       brlog "INFO" "Completed ${COMMAND} job"
       break;
     else
-      oc logs -f ${POD} --since=5s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
+      sleep 10
+      oc ${OC_ARGS} logs ${POD} --since=12s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
     fi
   done
   if [ "${COMMAND}" = "backup" ] ; then
+    brlog "INFO" "Transfering backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+      brlog "ERROR" "Backup file is broken, or does not exist."
+      oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
+      exit 1
+    fi
   fi
+  oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
   oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}"
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then
@@ -171,16 +182,13 @@ if [ "${COMMAND}" = "backup" ] ; then
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
     set +e
-    while true;
-    do
-      ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-      RC=$?
-      echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-      if [ $RC -eq 0 ] ; then
-        break
-      fi
-      brlog "WARN" "Some file could not be transfered. Retrying..."
-    done
+    ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    RC=$?
+    echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    if [ $RC -ne 0 ] ; then
+      brlog "ERROR" "Some file could not be transfered. Consider to use '--use-job' and '--pvc' option. Please see help (--help) for details."
+      exit 1
+    fi
     set -e
     cd - > /dev/null
   done
@@ -221,16 +229,13 @@ if [ "${COMMAND}" = "restore" ] ; then
         continue
       fi
       set +e
-      while true;
-      do
-        ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-        RC=$?
-        echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-        if [ $RC -eq 0 ] ; then
-          break
-        fi
-        brlog "WARN" "Some file could not be transfered. Retrying..."
-      done
+      ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      RC=$?
+      echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      if [ $RC -ne 0 ] ; then
+        brlog "ERROR" "Some files could not be transfered. Please consider to use '--use-job' and '--pvc' option. See help (--help) for details."
+        exit 1
+      fi
       set -e
     fi
   done

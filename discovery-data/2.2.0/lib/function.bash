@@ -488,7 +488,7 @@ get_job_pod(){
   local label=$1
   brlog "INFO" "Waiting for job pod"
   POD=""
-  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-20}
+  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-200}
   WAIT_COUNT=0
   while :
   do
@@ -515,7 +515,7 @@ get_job_pod(){
 
 wait_job_running() {
   POD=$1
-  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-20}
+  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-200}
   WAIT_COUNT=0
   while :
   do
@@ -587,4 +587,41 @@ add_env_to_job_yaml(){
   local yaml_file=$1
   shift
   sed -i -e "s/          env:/          env:\n            - name: ${env_name}\n              value: \"${env_value}\"/" "${yaml_file}"
+}
+
+add_volume_to_job_yaml(){
+  local volume_name=$1
+  shift
+  local yaml_file=$1
+  shift
+  if [ "${volume_name}" = "emptyDir" ] ; then
+    sed -i -e "s/      volumes:/      volumes:\n        - name: backup-restore-workspace\n          emptyDir: {}/" "${yaml_file}"
+  else
+    sed -i -e "s/      volumes:/      volumes:\n        - name: backup-restore-workspace\n          persistentVolumeClaim:\n            claimName: ${volume_name}/" "${yaml_file}"
+  fi
+}
+
+verify_args(){
+  if [ -z "$COMMAND" ] ; then
+    brlog "ERROR" "Please specify command, backup or restore"
+    exit 1
+  fi
+  if [ "$COMMAND" = "restore" ] ; then
+    if [ -z "${BACKUP_FILE}" ] ; then
+      brlog "ERROR" "Please specify backup file."
+      exit 1
+    fi
+    if [ ! -e "${BACKUP_FILE}" ] ; then
+      brlog "ERROR" "Backup file not found: ${BACKUP_FILE}"
+      exit 1
+    fi
+  fi
+  if [ -n "${TENANT_NAME+UNDEF}" ] && [ -z "`oc get ${OC_ARGS} wd ${TENANT_NAME}`" ] ; then
+    brlog "ERROR" "Tenant (release) not found: ${TENANT_NAME}"
+    exit 1
+  fi
+  if [ -n "${JOB_PVC_NAME+UNDEF}" ] && [ -z "`oc get ${OC_ARGS} pvc ${JOB_PVC_NAME}`" ] ; then
+    brlog "ERROR" "PVC not found: ${JOB_PVC_NAME}"
+    exit 1
+  fi
 }

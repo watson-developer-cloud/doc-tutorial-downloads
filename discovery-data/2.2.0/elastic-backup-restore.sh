@@ -17,7 +17,7 @@ ELASTIC_BACKUP="elastic_snapshot.tar.gz"
 ELASTIC_BACKUP_DIR="elastic_backup"
 ELASTIC_BACKUP_BUCKET="elastic-backup"
 ELASTIC_REQUEST_TIMEOUT="30m"
-ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-60}
+ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-180}
 ELASTIC_WAIT_GREEN_STATE=${ELASTIC_WAIT_GREEN_STATE:-"false"}
 ELASTIC_JOB_FILE="${SCRIPT_DIR}/src/elastic-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
@@ -25,6 +25,7 @@ TMP_WORK_DIR="tmp/elastic_workspace"
 CURRENT_COMPONENT="elastic"
 MINIO_SCRIPTS=${SCRIPT_DIR}/minio-backup-restore.sh
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
+DISABLE_MC_MULTIPART=${DISABLE_MC_MULTIPART:-true}
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
@@ -111,37 +112,47 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
     -e "s/#tenant#/${TENANT_NAME}/g" \
     "${ELASTIC_JOB_TEMPLATE}" > "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
-  add_env_to_job_yaml "VERIFY_DATASTORE_ARCHIVE" "${VERIFY_DATASTORE_ARCHIVE}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_STATUS_CHECK_INTERVAL" "${ELASTIC_STATUS_CHECK_INTERVAL}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_WAIT_GREEN_STATE" "${ELASTIC_WAIT_GREEN_STATE}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${ELASTIC_JOB_FILE}"
+  add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${ELASTIC_JOB_FILE}"
 
   oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}" &> /dev/null || true
   oc ${OC_ARGS} apply -f "${ELASTIC_JOB_FILE}"
   get_job_pod "app.kubernetes.io/component=${ELASTIC_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
   wait_job_running ${POD}
-  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
 
   if [ "${COMMAND}" = "restore" ] ; then
+    brlog "INFO" "Transfering backup data"
     kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
   fi
-  oc exec ${POD} -- touch /tmp/wexdata_copied
-  brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
+  oc ${OC_ARGS} exec ${POD} -- touch /tmp/wexdata_copied
+  brlog "INFO" "Waiting for ${COMMAND} job to be completed"
   while :
   do
     if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
       brlog "INFO" "Completed ${COMMAND} job"
       break;
     else
-      oc logs -f ${POD} --since=5s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
+      sleep 10
+      oc ${OC_ARGS} logs ${POD} --since=12s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
     fi
   done
   if [ "${COMMAND}" = "backup" ] ; then
+    brlog "INFO" "Transfering backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${ELASTIC_BACKUP}" ${OC_ARGS}
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+      brlog "ERROR" "Backup file is broken, or does not exist."
+      oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
+      exit 1
+    fi
   fi
+  oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
   oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}"
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then
@@ -183,25 +194,24 @@ if [ ${COMMAND} = 'backup' ] ; then
       brlog "INFO" "Snapshot successfully finished."
       run_cmd_in_pod ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
       brlog "INFO" "Transfering snapshot from MinIO"
-      while true;
-      do
-        cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
 ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
 ===================================================
 EOF
-        start_minio_port_forward
-        ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-        RC=$?
-        stop_minio_port_forward
-        echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-        if [ $RC -eq 0 ] ; then
-          break
-        fi
-        brlog "WARN" "Some file could not be transfered. Retrying..."
-      done
-      brlog "INFO" "Archiving sanpshot..."
-      tar ${ELASTIC_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
+      set +e
+      start_minio_port_forward
+      ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      RC=$?
+      stop_minio_port_forward
+      echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      if [ $RC -eq 0 ] ; then
+        brlog "INFO" "Archiving sanpshot..."
+        tar ${ELASTIC_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
+      else
+        brlog "ERROR" "Some files could not be transfered. Consider to use '--use-job' and '--pvc' option. Please see help (--help) for details."
+      fi
+      set -e
       break;
     elif [ "${snapshot_status}" = "FAILED" -o "${snapshot_status}" = "PARTIAL" ] ; then
       brlog "ERROR" "Snapshot failed"
@@ -220,8 +230,13 @@ EOF
   start_minio_port_forward
   ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   stop_minio_port_forward
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
-    brlog "ERROR" "Backup file is broken, or does not exist."
+  if [ -e "${BACKUP_FILE}" ] ; then
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ELASTIC_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+      brlog "ERROR" "Backup file is broken, or does not exist."
+      exit 1
+    fi
+  else
+    brlog "ERROR" "Error on getting backup ElasticSearch"
     exit 1
   fi
   echo
@@ -249,25 +264,28 @@ if [ ${COMMAND} = 'restore' ] ; then
     ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
   stop_minio_port_forward
+  
   set +e
-  while true;
-  do
-    cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+  cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
 ${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
 ===================================================
 EOF
+  start_minio_port_forward
+  ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+  RC=$?
+  stop_minio_port_forward
+  echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+  if [ $RC -ne 0 ] ; then
+    brlog "ERROR" "Some files could not be transfered. Consider to use '--use-job' and '--pvc' option. Please see help (--help) for details."
+    brlog "INFO" "Clean up"
     start_minio_port_forward
-    ${MC} ${MC_OPTS[@]} mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-    RC=$?
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
     stop_minio_port_forward
-    echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
-    if [ $RC -eq 0 ] ; then
-      break
-    fi
-    brlog "WARN" "Some file could not be transfered. Retrying..."
-  done
+    exit 1
+  fi
   set -e
+
   brlog "INFO" "Start Restoring snapshot"
   run_cmd_in_pod ${ELASTIC_POD} 'S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" && \
