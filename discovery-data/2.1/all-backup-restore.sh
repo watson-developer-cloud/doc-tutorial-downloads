@@ -4,7 +4,7 @@ set -e
 
 BACKUP_ARGS=""
 BACKUP_DIR="tmp"
-SPLITE_DIR=./tmp_split_bakcup
+SPLITE_DIR=./tmp_split_backup
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile] [-n namespace]"

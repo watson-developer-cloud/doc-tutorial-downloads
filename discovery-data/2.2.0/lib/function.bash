@@ -113,7 +113,7 @@ get_stat_command(){
   elif [ "$(uname)" = "Linux" ] ; then
     echo 'stat --printf="%s"'
   else
-    echo "Unexpected os type. Use: stat --printf='%s'" >&2
+    echo "Unexpected OS type. Use: stat --printf='%s'" >&2
     echo 'stat --printf="%s"'
   fi
 }
@@ -126,7 +126,7 @@ get_sed_reg_opt(){
   elif [ "$(uname)" = "Linux" ] ; then
     echo ' -r'
   else
-    echo "Unexpected os type. Use '-r' as a regex option for sed." >&2
+    echo "Unexpected OS type. Use '-r' as a regex option for sed." >&2
     echo ' -r'
   fi
 }
@@ -139,7 +139,7 @@ get_base64_opt(){
   elif [ "$(uname)" = "Linux" ] ; then
     echo '-w 0'
   else
-    echo "Unexpected os type. Use base64 option '-w 0'." >&2
+    echo "Unexpected OS type. Use base64 option '-w 0'." >&2
     echo '-w 0'
   fi
 }
@@ -163,7 +163,7 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
+  SPLITE_DIR=./tmp_split_backup
   SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
@@ -219,7 +219,7 @@ kube_cp_to_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
+  SPLITE_DIR=./tmp_split_backup
   SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 

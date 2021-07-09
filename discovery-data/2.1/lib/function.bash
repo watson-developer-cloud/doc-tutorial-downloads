@@ -42,7 +42,7 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
+  SPLITE_DIR=./tmp_split_backup
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
   STAT_CMD="`get_stat_command` ${LOCAL_BACKUP}"
@@ -70,7 +70,7 @@ kube_cp_to_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
+  SPLITE_DIR=./tmp_split_backup
   SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
   POD_SIZE=`kubectl $@ exec ${POD} -- bash -c "stat --printf="%s" ${POD_BACKUP}"`

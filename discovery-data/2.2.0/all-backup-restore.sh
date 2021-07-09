@@ -5,7 +5,7 @@ set -e
 BACKUP_DIR="tmp"
 BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
-SPLITE_DIR=./tmp_split_bakcup
+SPLITE_DIR=./tmp_split_backup
 OC_ARGS="${OC_ARGS:-}"
 
 TAB="$(printf '\t')"
@@ -16,22 +16,22 @@ Usage:
 
 Options:
     --help, -h                                 Show help
-    --file, -f                                 Speccify backup file
-    --log-output-dir="<directory_path>"        Specify outout direcotry of detailed component logs
+    --file, -f                                 Specify backup file
+    --log-output-dir="<directory_path>"        Specify output directory of detailed component logs
 
 Options (Advanced):
 Basically, you don't need these advanced options.
 
-    --archive-on-local                         Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take much time.
-    --backup-archive-option="<tar_option>"     Tar options for compression used on archiving the backup file. Default none.
-    --datastore-archive-option="<tar_option>"  Tar options for comporession used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
-    --postgresql-archive-option="<tar_option>" Tar options for comporession used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
-    --etcd-archive-option="<tar_option>"       Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
+    --archive-on-local                         Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take a long time.
+    --backup-archive-option="<tar_option>"     Tar options for compression used for archiving the backup file. Default: none.
+    --datastore-archive-option="<tar_option>"  Tar options for compression used for archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
+    --postgresql-archive-option="<tar_option>" Tar options for comporession used for archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
+    --etcd-archive-option="<tar_option>"       Tar options used for archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
     --skip-verify-archive                      Skip the all verifying process of the archive.
     --skip-verify-backup                       Skip verifying the backup file.
     --skip-verify-datastore-archive            Skip verifying the archive of datastores.
-    --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if fail to transfer data to MinIO.
-    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. It's size depends on ephemeral storage.
+    --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if it fails to transfer data to MinIO.
+    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. Its size depends on ephemeral storage.
     --enable-multipart                         Enable multipart upload of MinIO client on kubernetes job.
 EOF
 }
@@ -266,7 +266,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   for COMP in ${ALL_COMPONENT[@]}
   do
     if ! echo "${BACKUP_FILES}" | grep ${COMP} > /dev/null ; then
-      brlog "ERROR" "${COMP}.backup does not exists."
+      brlog "ERROR" "${COMP}.backup does not exist."
       exit 1
     fi
   done

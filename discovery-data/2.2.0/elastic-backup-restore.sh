@@ -5,7 +5,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 typeset -r SCRIPT_DIR
 
-# shellcheck source=lib/restore-utilites.bash
 source "${SCRIPT_DIR}/lib/restore-updates.bash"
 source "${SCRIPT_DIR}/lib/function.bash"
 
