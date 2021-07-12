@@ -60,24 +60,34 @@ do
 done
 
 brlog "INFO" "Restore tenants information"
-
+WD_VERSION=${WD_VERSION:-`get_version`}
 PG_POD=""
 
-for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
-  if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
-    PG_POD=${POD}
-  fi
-done
+if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+  PG_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
+  PG_JOB_FILE="${SCRIPT_DIR}/src/pg-backup-restore-job.yml"
+  PG_BACKUP_RESTORE_JOB="wd-discovery-postgres-backup-restore"
+  PG_ARCHIVE_OPTION="temp"
+  COMMAND=post-restore
+  run_pg_job
+  PG_POD=${POD}
+else
+  for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
+    if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
+      PG_POD=${POD}
+    fi
+  done
+fi
 
 for tenants_file in `ls -t tmp_wd_tenants_*.txt` ; do
   if [ -n "`cat ${tenants_file}`" ] ; then
     kube_cp_from_local ${PG_POD} "${tenants_file}" "/tmp/tenants" ${OC_ARGS}
-    fetch_cmd_result ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
-      export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
-      export PGHOST=${HOSTNAME} && \
+    fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
+      export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
+      export PGHOST=${PGHOST:-$HOSTNAME} && \
       if ! psql -d dadmin -t -c "SELECT * FROM tenants;" | grep "default" > /dev/null ; then \
         psql -d dadmin -c "TRUNCATE tenants" && \
-        psql -d dadmin -c "COPY tenants FROM '"'"'/tmp/tenants'"'"'" ;\
+        psql -d dadmin -c "\COPY tenants FROM '"'"'/tmp/tenants'"'"'" ;\
       else\
         echo "COPY" ;\
       fi&& \
@@ -87,12 +97,28 @@ done
 
 ## End restore tenants
 
+## Set default as tenant ID
 if [ `compare_version "${WD_VERSION}" "2.2.1"` -ge 0 ] && [ `compare_version "${BACKUP_FILE_VERSION}" "2.2.0"` -le 0 ] ; then
-  fetch_cmd_result ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
-      export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
-      export PGHOST=${HOSTNAME} && \
+  fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
+      export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
+      export PGHOST=${PGHOST:-$HOSTNAME} && \
       psql -d dadmin -c "UPDATE projects SET tenant_id = '"'default'"' ;" &&\
       psql -d dadmin -c "UPDATE datasets SET tenant_id = '"'default'"' ;" ' ${OC_ARGS}
+fi
+## End set default
+fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
+      export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
+      export PGHOST=${PGHOST:-$HOSTNAME} && \
+      psql -d ranker_training -c "UPDATE data SET version = version+1;" && \
+      psql -d ranker_training -c "WITH T AS (SELECT DISTINCT ON (training_set_id) training_job_id from jobs ORDER BY training_set_id, data_version DESC) UPDATE jobs SET state = '"'"'INVALIDATE_RANKER'"'"' where training_job_id IN (select training_job_id from T);"
+      ' ${OC_ARGS}
+
+## Update ranker version to run retrain
+
+## End update ranker
+
+if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+  oc ${OC_ARGS} delete -f $PG_JOB_FILE
 fi
 
 rm -rf ${TMP_WORK_DIR}

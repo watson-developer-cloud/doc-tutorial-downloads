@@ -48,6 +48,8 @@ do
   esac
 done
 
+BACKUP_FILE=${BACKUP_FILE:-"elastic_`date "+%Y%m%d_%H%M%S"`.snapshot"}
+
 ELASTIC_ARCHIVE_OPTION="${ELASTIC_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
 if [ -n "${ELASTIC_ARCHIVE_OPTION}" ] ; then
   read -a ELASTIC_TAR_OPTIONS <<< ${ELASTIC_ARCHIVE_OPTION}
@@ -78,18 +80,17 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
   ELASTIC_BACKUP_RESTORE_SCRIPTS="elastic-backup-restore-in-pod.sh"
   ELASTIC_BACKUP_RESTORE_JOB="wd-discovery-elastic-backup-restore"
-  ELASTIC_JOB_TEMPLATE="${SCRIPT_DIR}/src/minio-client-job-template.yml"
-  MC_CPU_LIMITS="${MC_CPU_LIMITS:-800m}"
-  MC_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}"
+  ELASTIC_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
+  JOB_CPU_LIMITS="${MC_CPU_LIMITS:-800m}" # backward compatibility
+  JOB_CPU_LIMITS="${JOB_CPU_LIMITS:-800m}"
+  JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
+  JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-  SERVICE_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
-  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
-  WD_MIGRATOR_TAG="`get_migrator_tag`"
-  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
+  WD_MIGRATOR_IMAGE="`get_migrator_image`"
   ELASTIC_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=elastic-cxn -o jsonpath="{.items[0].metadata.name}"`
   ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
   MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
-  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`get_service_account`
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
   CURRENT_TZ=`date "+%z" | tr -d '0'`
   if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
@@ -101,16 +102,21 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   sed -e "s/#namespace#/${NAMESPACE}/g" \
     -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
     -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
-    -e "s/#elastic-secret#/${ELASTIC_SECRET}/g" \
-    -e "s/#elastic-configmap#/${ELASTIC_CONFIGMAP}/g" \
-    -e "s/#minio-secret#/${MINIO_SECRET}/g" \
-    -e "s/#minio-configmap#/${MINIO_CONFIGMAP}/g" \
-    -e "s/#cpu-limit#/${MC_CPU_LIMITS}/g" \
-    -e "s/#memory-limit#/${MC_MEMORY_LIMITS}/g" \
+    -e "s/#cpu-limit#/${JOB_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${JOB_MEMORY_LIMITS}/g" \
     -e "s|#command#|./${ELASTIC_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
     -e "s/#job-name#/${ELASTIC_BACKUP_RESTORE_JOB}/g" \
     -e "s/#tenant#/${TENANT_NAME}/g" \
     "${ELASTIC_JOB_TEMPLATE}" > "${ELASTIC_JOB_FILE}"
+  add_config_env_to_job_yaml "ELASTIC_ENDPOINT" "${ELASTIC_CONFIGMAP}" "endpoint" "${ELASTIC_JOB_FILE}"
+  add_secret_env_to_job_yaml "ELASTIC_USER" "${ELASTIC_SECRET}" "username" "${ELASTIC_JOB_FILE}"
+  add_secret_env_to_job_yaml "ELASTIC_PASSWORD" "${ELASTIC_SECRET}" "password" "${ELASTIC_JOB_FILE}"
+  add_config_env_to_job_yaml "MINIO_ENDPOINT_URL" "${MINIO_CONFIGMAP}" "endpoint" "${ELASTIC_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_HOST" "${MINIO_CONFIGMAP}" "host" "${ELASTIC_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_PORT" "${MINIO_CONFIGMAP}" "port" "${ELASTIC_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_ELASTIC_BACKUP_BUCKET" "${MINIO_CONFIGMAP}" "bucketElasticBackup" "${ELASTIC_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_ACCESS_KEY" "${MINIO_SECRET}" "accesskey" "${ELASTIC_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_SECRET_KEY" "${MINIO_SECRET}" "secretkey" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_STATUS_CHECK_INTERVAL" "${ELASTIC_STATUS_CHECK_INTERVAL}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
@@ -173,7 +179,6 @@ MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
 
 # backup elastic search
 if [ ${COMMAND} = 'backup' ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"elastic_`date "+%Y%m%d_%H%M%S"`.snapshot"}
   brlog "INFO" "Start backup elasticsearch..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
   start_minio_port_forward
@@ -183,17 +188,18 @@ if [ ${COMMAND} = 'backup' ] ; then
   fi
   stop_minio_port_forward
   brlog "INFO" "Taking snapshot..."
-  run_cmd_in_pod ${ELASTIC_POD} 'S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
+  run_cmd_in_pod ${ELASTIC_POD} 'export S3_HOST='${MINIO_SVC}' && export S3_PORT='${MINIO_PORT}' && export S3_ELASTIC_BACKUP_BUCKET=elastic-backup && export ELASTIC_ENDPOINT=https://localhost:9200 && \
+  S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}" | grep acknowledged && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d'"'"'{"indices": "*","ignore_unavailable": true,"include_global_state": false}'"'"' | grep accepted && echo' ${OC_ARGS} -c elasticsearch
   brlog "INFO" "Requested snapshot"
   while true;
   do
-    snapshot_status=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0].state"' ${OC_ARGS} -c elasticsearch`
+    snapshot_status=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0].state"' ${OC_ARGS} -c elasticsearch`
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
-      run_cmd_in_pod ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
-      brlog "INFO" "Transferring snapshot from MinIO"
+      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
+      brlog "INFO" "Transfering snapshot from MinIO"
       cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
 ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
@@ -215,7 +221,7 @@ EOF
       break;
     elif [ "${snapshot_status}" = "FAILED" -o "${snapshot_status}" = "PARTIAL" ] ; then
       brlog "ERROR" "Snapshot failed"
-      brlog "INFO" "`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch`"
+      brlog "INFO" "`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch`"
       break;
     else
       # comment out the progress because it shows always 0 until it complete.
@@ -224,7 +230,7 @@ EOF
     fi
   done
   brlog "INFO" "Clean up"
-  run_cmd_in_pod ${ELASTIC_POD} 'curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
+  run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
   while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" ; do sleep 30; done' ${OC_ARGS} -c elasticsearch
   echo
   start_minio_port_forward
@@ -287,7 +293,8 @@ EOF
   set -e
 
   brlog "INFO" "Start Restoring snapshot"
-  run_cmd_in_pod ${ELASTIC_POD} 'S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
+  run_cmd_in_pod ${ELASTIC_POD} 'export S3_HOST='${MINIO_SVC}' && export S3_PORT='${MINIO_PORT}' && export S3_ELASTIC_BACKUP_BUCKET=elastic-backup && export ELASTIC_ENDPOINT=https://localhost:9200 && \
+  S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"` && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" && \
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_all?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep acknowledged && \
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/.*?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep acknowledged && \
@@ -298,7 +305,7 @@ EOF
   sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
   while true;
   do
-    tmp_total_shards=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
+    tmp_total_shards=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
     if [ ${total_shards} -ge ${tmp_total_shards} ] ; then
       break
     else
@@ -309,7 +316,7 @@ EOF
   brlog "INFO" "Total shards in snapshot: ${total_shards}"
   while true;
   do
-    done_count=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
+    done_count=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
     brlog "INFO" "${done_count} shards finished"
     if [ ${done_count} -ge ${total_shards} ] ; then
       break
@@ -320,7 +327,7 @@ EOF
   if [ "${ELASTIC_WAIT_GREEN_STATE}" = "true" ] ; then
     brlog "INFO" "Wait for the ElasticSearch to be Green State"
     while true;
-    cluster_status=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch`
+    cluster_status=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch`
     do
       if [ "${cluster_status}" = "green" ] ; then
         break;
@@ -329,7 +336,7 @@ EOF
     done
   fi
   brlog "INFO" "Delete snapshot"
-  run_cmd_in_pod ${ELASTIC_POD} 'curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
+  run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
   while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" ; do sleep 30; done && \
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
   echo
