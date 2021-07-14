@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/instance: core
     app.kubernetes.io/name: discovery
     service: discovery
-  namespace: @namespace@
+  namespace: #namespace#
 spec:
   backoffLimit: 6
   template:
@@ -20,12 +20,12 @@ spec:
         helm.sh/chart: ibm-watson-discovery-core-prod
         service: discovery
     spec:
-      serviceAccount: @svc-account@
-      serviceAccountName: @svc-account@
+      serviceAccount: #svc-account#
+      serviceAccountName: #svc-account#
       restartPolicy: Never
       containers:
         - name: wd-migrator-job
-          image: @image@
+          image: #image#
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -40,7 +40,7 @@ spec:
             - name: DATASET_PG_BATCH_SIZE
               value: "100"
             - name: MIGRATOR_MAX_HEAP
-              value: "@max-heap@"
+              value: "#max-heap#"
             - name: INITIALIZE_DB_WITH_LIQUIBASE
               value: "true"
             - name: DOCUMENT_STORE_RETRY_MAX
@@ -48,84 +48,84 @@ spec:
             - name: PGHOST
               valueFrom:
                 configMapKeyRef:
-                  name: @pg-configmap@
+                  name: #pg-configmap#
                   key: host
             - name: PGPORT
               valueFrom:
                 configMapKeyRef:
-                  name: @pg-configmap@
+                  name: #pg-configmap#
                   key: port
             - name: PGUSER
               valueFrom:
                 configMapKeyRef:
-                  name: @pg-configmap@
+                  name: #pg-configmap#
                   key: username
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: @pg-secret@
-                  key: STKEEPER_PG_SU_PASSWORD
+                  name: #pg-secret#
+                  key: #pg-pass-key#
             - name: ETCD_USER
               valueFrom:
                 secretKeyRef:
-                  name: @etcd-secret@
+                  name: #etcd-secret#
                   key: username
             - name: ETCD_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: @etcd-secret@
+                  name: #etcd-secret#
                   key: password
             - name: ETCD_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: @etcd-configmap@
+                  name: #etcd-configmap#
                   key: host
             - name: ETCD_PORT
               valueFrom:
                 configMapKeyRef:
-                  name: @etcd-configmap@
+                  name: #etcd-configmap#
                   key: port
             - name: ETCD_TLS_ENABLED
               value: "true"
             - name: CK_SECRET_CK
               valueFrom:
                 secretKeyRef:
-                  name: @ck-secret@
+                  name: #ck-secret#
                   key: CK
             - name: CK_SECRET_OK
               valueFrom:
                 secretKeyRef:
-                  name: @ck-secret@
+                  name: #ck-secret#
                   key: OK
             - name: CK_SECRET_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: @ck-secret@
+                  name: #ck-secret#
                   key: Password
             - name: S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: @minio-secret@
+                  name: #minio-secret#
                   key: accesskey
             - name: S3_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: @minio-secret@
+                  name: #minio-secret#
                   key: secretkey
             - name: S3_ENDPOINT_URL
               valueFrom:
                 configMapKeyRef:
-                  name: @minio-configmap@
+                  name: #minio-configmap#
                   key: endpoint
             - name: S3_FILERESOURCE_BUCKET
               valueFrom:
                 configMapKeyRef:
-                  name: @minio-configmap@
+                  name: #minio-configmap#
                   key: bucketCommon
           resources:
             limits:
-              cpu: "@cpu-limit@"
-              memory: "@memory-limit@"
+              cpu: "#cpu-limit#"
+              memory: "#memory-limit#"
             requests:
               cpu: "100m"
               memory: "256Mi"

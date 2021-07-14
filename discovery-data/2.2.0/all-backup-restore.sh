@@ -224,16 +224,18 @@ export TENANT_NAME=${TENANT_NAME}
 export SCRIPT_DIR=${SCRIPT_DIR}
 export OC_ARGS=${OC_ARGS}
 
-brlog "INFO" "Getting mc command for backup/restore of MinIO and ElasticSearch"
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
-if [ -n "${MC_COMMAND+UNDEF}" ] ; then
-  MC_COMMAND=${MC_COMMAND}
-else
-  get_mc ${TMP_WORK_DIR}
-  MC_COMMAND=${PWD}/${TMP_WORK_DIR}/mc
+if ! "${BACKUP_RESTORE_IN_POD:-false}" ; then
+  brlog "INFO" "Getting mc command for backup/restore of MinIO and ElasticSearch"
+  if [ -n "${MC_COMMAND+UNDEF}" ] ; then
+    MC_COMMAND=${MC_COMMAND}
+  else
+    get_mc ${TMP_WORK_DIR}
+    MC_COMMAND=${PWD}/${TMP_WORK_DIR}/mc
+  fi
+  export MC_COMMAND=${MC_COMMAND}
 fi
-export MC_COMMAND=${MC_COMMAND}
 
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 brlog "INFO" "Component log directory: ${BACKUP_RESTORE_LOG_DIR}"

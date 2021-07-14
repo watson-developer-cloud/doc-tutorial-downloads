@@ -45,6 +45,8 @@ done
 brlog "INFO" "MinIO:"
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
+BACKUP_FILE=${BACKUP_FILE:-"minio_`date "+%Y%m%d_%H%M%S"`.tar.gz"}
+
 MINIO_ARCHIVE_OPTION="${MINIO_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
 if [ -n "${MINIO_ARCHIVE_OPTION}" ] ; then
   read -a MINIO_TAR_OPTIONS <<< ${MINIO_ARCHIVE_OPTION}
@@ -70,18 +72,17 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
   MINIO_BACKUP_RESTORE_SCRIPTS="minio-backup-restore-in-pod.sh"
   MINIO_BACKUP_RESTORE_JOB="wd-discovery-minio-backup-restore"
-  MINIO_JOB_TEMPLATE="${SCRIPT_DIR}/src/minio-client-job-template.yml"
-  MC_CPU_LIMITS="${MC_CPU_LIMITS:-800m}"
-  MC_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}"
+  MINIO_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
+  JOB_CPU_LIMITS="${MC_CPU_LIMITS:-800m}" # backward compatibility
+  JOB_CPU_LIMITS="${JOB_CPU_LIMITS:-800m}"
+  JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
+  JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-  SERVICE_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
-  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
-  WD_MIGRATOR_TAG="`get_migrator_tag`"
-  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
+  WD_MIGRATOR_IMAGE="`get_migrator_image`"
   ELASTIC_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=elastic-cxn -o jsonpath="{.items[0].metadata.name}"`
   ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
   MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
-  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`get_service_account`
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
   CURRENT_TZ=`date "+%z" | tr -d '0'`
   if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
@@ -93,16 +94,21 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   sed -e "s/#namespace#/${NAMESPACE}/g" \
     -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
     -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
-    -e "s/#elastic-secret#/${ELASTIC_SECRET}/g" \
-    -e "s/#elastic-configmap#/${ELASTIC_CONFIGMAP}/g" \
-    -e "s/#minio-secret#/${MINIO_SECRET}/g" \
-    -e "s/#minio-configmap#/${MINIO_CONFIGMAP}/g" \
-    -e "s/#cpu-limit#/${MC_CPU_LIMITS}/g" \
-    -e "s/#memory-limit#/${MC_MEMORY_LIMITS}/g" \
+    -e "s/#cpu-limit#/${JOB_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${JOB_MEMORY_LIMITS}/g" \
     -e "s|#command#|./${MINIO_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
     -e "s/#job-name#/${MINIO_BACKUP_RESTORE_JOB}/g" \
     -e "s/#tenant#/${TENANT_NAME}/g" \
     "${MINIO_JOB_TEMPLATE}" > "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "ELASTIC_ENDPOINT" "${ELASTIC_CONFIGMAP}" "endpoint" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "ELASTIC_USER" "${ELASTIC_SECRET}" "username" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "ELASTIC_PASSWORD" "${ELASTIC_SECRET}" "password" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "MINIO_ENDPOINT_URL" "${MINIO_CONFIGMAP}" "endpoint" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_HOST" "${MINIO_CONFIGMAP}" "host" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_PORT" "${MINIO_CONFIGMAP}" "port" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_ELASTIC_BACKUP_BUCKET" "${MINIO_CONFIGMAP}" "bucketElasticBackup" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_ACCESS_KEY" "${MINIO_SECRET}" "accesskey" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_SECRET_KEY" "${MINIO_SECRET}" "secretkey" "${MINIO_JOB_FILE}"
   add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${MINIO_JOB_FILE}"
   add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${MINIO_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${MINIO_JOB_FILE}"
@@ -162,7 +168,6 @@ MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"minio_`date "+%Y%m%d_%H%M%S"`.tar.gz"}
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
   start_minio_port_forward
