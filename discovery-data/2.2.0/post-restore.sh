@@ -85,6 +85,7 @@ for tenants_file in `ls -t tmp_wd_tenants_*.txt` ; do
     fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
       export PGHOST=${PGHOST:-$HOSTNAME} && \
+      while ! psql -d dadmin -t -c "SELECT * FROM tenants" &> /dev/null; do sleep 10; done && \
       if ! psql -d dadmin -t -c "SELECT * FROM tenants;" | grep "default" > /dev/null ; then \
         psql -d dadmin -c "TRUNCATE tenants" && \
         psql -d dadmin -c "\COPY tenants FROM '"'"'/tmp/tenants'"'"'" ;\
