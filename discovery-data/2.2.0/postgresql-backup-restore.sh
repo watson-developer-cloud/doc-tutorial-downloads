@@ -100,7 +100,8 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
     brlog "INFO" "Get tenant information."
     while :
     do
-      if fetch_cmd_result ${POD} "ls ${BACKUP_RESTORE_DIR_IN_POD}" | grep "tenants" > /dev/null ; then
+      tmp_files=`fetch_cmd_result ${POD} "ls ${BACKUP_RESTORE_DIR_IN_POD}"`
+      if echo "${tmp_files}" | grep "tenants" > /dev/null ; then
         TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
         kube_cp_to_local ${POD} "${TENANT_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/tenants" ${OC_ARGS}
         run_cmd_in_pod ${POD} "rm -f ${BACKUP_RESTORE_DIR_IN_POD}/tenants" ${OC_ARGS}

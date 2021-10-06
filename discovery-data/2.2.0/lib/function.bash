@@ -61,9 +61,6 @@ validate_version(){
 get_version(){
   if [ -n "`oc get wd ${OC_ARGS} ${TENANT_NAME}`" ] ; then
     local version=`oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath='{.spec.version}'`
-    if [ "${version}" = "main" ] ; then #TODO remove this section after dev
-      version="4.0.0"
-    fi
     echo "${version%%-*}"
   elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
     if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
@@ -299,7 +296,7 @@ fetch_cmd_result(){
       brlog "WARN" "Failed to get command result. Failure count: ${fail_count}" >&2
       fail_count=$((fail_count += 1))
       if [ ${fail_count} -gt ${MAX_CMD_FAILURE_COUNT} ] ; then
-        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times."
+        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times." >&2
         exit 1
       fi
       sleep ${MONITOR_CMD_INTERVAL}
@@ -435,7 +432,7 @@ quiesce(){
 }
 
 get_image_repo(){
-  local utils_image="`oc get ${OC_ARGS} pod -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils | tail -n1`"
+  local utils_image="`oc get ${OC_ARGS} deploy -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils | tail -n1`"
   echo "${utils_image%/*}"
 }
 
@@ -450,8 +447,10 @@ get_migrator_tag(){
     echo "12.0.6-2031"
   elif [ "${wd_version}" = "2.2.1" ] ; then
     echo "12.0.7-3010"
-  else
+  elif [ "${wd_version}" = "4.0.0" ] ; then
     echo "12.0.8-5028@sha256:a74a705b072a25f01c98a4ef5b4e7733ceb7715c042cc5f7876585b5359f1f65"
+  else
+    echo "12.0.9-7007@sha256:f604cbed6f6517c6bd8c11dc6dd13da9299c73c36d00c36d60129a798e52dcbb"
   fi
 }
 
@@ -459,10 +458,13 @@ get_migrator_image(){
   echo "`get_migrator_repo`:${MIGRATOR_TAG:-`get_migrator_tag`}"
 }
 
+# Get postgres configure image tag in 4.0.0 or later.
 get_pg_config_tag(){
   local wd_version=${WD_VERSION:-`get_version`}
   if [ "${wd_version}" = "4.0.0" ] ; then
     echo "20210604-150426-1103-5d09428b@sha256:52d3dd27728388458aaaca2bc86d06f9ad61b7ffcb6abbbb1a87d11e6635ebbf"
+  elif [ "${wd_version}" = "4.0.2" ] ; then
+    echo "20210901-003512-1193-d0afc1d9@sha256:1db665ab92d4a8e6ef6d46921cec8c0883562e6330aa37f12fe005d3129aa3b5"
   fi
 }
 
