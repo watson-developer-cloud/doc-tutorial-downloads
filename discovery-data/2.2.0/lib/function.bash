@@ -432,7 +432,7 @@ quiesce(){
 }
 
 get_image_repo(){
-  local utils_image="`oc get ${OC_ARGS} pod -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils | tail -n1`"
+  local utils_image="`oc get ${OC_ARGS} deploy -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils | tail -n1`"
   echo "${utils_image%/*}"
 }
 
