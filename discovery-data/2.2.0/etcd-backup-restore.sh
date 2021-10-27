@@ -51,7 +51,7 @@ rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
-ETCD_SERVICE=`oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l app=etcd | tr '[[:space:]]' '\n' | grep etcd-client`
+ETCD_SERVICE=`oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l app=etcd | tr '[[:space:]]' '\n' | grep etcd-client | grep -e wd- -e discovery`
 ETCD_SECRET=`oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root`
 ETCD_USER=`oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode`
 ETCD_PASSWORD=`oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode`
