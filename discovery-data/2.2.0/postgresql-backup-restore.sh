@@ -15,6 +15,7 @@ PG_BACKUP_DIR="pg_backup"
 PG_BACKUP_PREFIX="/tmp/${PG_BACKUP_DIR}/pg_"
 PG_BACKUP_SUFFIX=".dump"
 PG_SCRIPT_VERSION="2.1.3"
+PG_JOB_FILE="${SCRIPT_DIR}/src/pg-backup-restore-job.yml"
 TMP_WORK_DIR="tmp/pg_backup"
 CURRENT_COMPONENT="postgresql"
 POSTGRES_CONFIG_JOB="wire-postgres"
@@ -46,7 +47,13 @@ SCRIPT_ARGS=${SCRIPT_ARGS:-""}
 brlog "INFO" "Postgressql: "
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
+WD_VERSION=${WD_VERSION:-`get_version`}
+
 PG_ARCHIVE_OPTION="${PG_ARCHIVE_OPTION--z}"
+if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+  PG_ARCHIVE_OPTION="${PG_ARCHIVE_OPTION} --exclude='${PG_BACKUP_DIR}/pg_dfs_induction.dump'"
+fi
+
 if [ -n "${PG_ARCHIVE_OPTION}" ] ; then
   read -a PG_TAR_OPTIONS <<< ${PG_ARCHIVE_OPTION}
 else
@@ -56,6 +63,7 @@ VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
 ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
+BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
@@ -69,9 +77,71 @@ for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l te
   fi
 done
 
+if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD:-false}" ; then
+  brlog "INFO" "Start ${COMMAND} postgres..."
+  BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
+  PG_BACKUP="pg_backup.tar.gz"
+  PG_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
+  PG_JOB_FILE="${SCRIPT_DIR}/src/pg-backup-restore-job.yml"
+  PG_BACKUP_RESTORE_JOB="wd-discovery-postgres-backup-restore"
+
+  run_pg_job
+
+  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc cp "${SCRIPT_DIR}/src/${PG_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+
+  if [ "${COMMAND}" = "restore" ] ; then
+    kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${PG_BACKUP}" ${OC_ARGS}
+  fi
+  oc exec ${POD} -- touch /tmp/wexdata_copied
+  brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
+  if [ "${COMMAND}" = "restore" ] ; then
+    brlog "INFO" "Get tenant information."
+    while :
+    do
+      tmp_files=`fetch_cmd_result ${POD} "ls ${BACKUP_RESTORE_DIR_IN_POD}"`
+      if echo "${tmp_files}" | grep "tenants" > /dev/null ; then
+        TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
+        kube_cp_to_local ${POD} "${TENANT_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/tenants" ${OC_ARGS}
+        run_cmd_in_pod ${POD} "rm -f ${BACKUP_RESTORE_DIR_IN_POD}/tenants" ${OC_ARGS}
+        break
+      else
+        sleep 10
+      fi
+    done
+  fi
+  while :
+  do
+    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+      brlog "INFO" "Completed ${COMMAND} job"
+      break;
+    else
+      sleep 10
+      oc logs ${POD} --since=12s 2>&1 | tee -a "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log" | grep -v "^error: unexpected EOF$" | grep "^[0-9]\{4\}/[0-9]\{2\}/[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}" || true
+    fi
+  done
+  if [ "${COMMAND}" = "backup" ] ; then
+    kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${PG_BACKUP}" ${OC_ARGS}
+  fi
+  oc ${OC_ARGS} delete -f "${PG_JOB_FILE}"
+
+  if [ "${COMMAND}" = "restore" ] ; then
+    brlog "INFO" "Run training db config job"
+    ./run-postgres-config-job.sh ${TENANT_NAME} ${SCRIPT_ARGS}
+    brlog "INFO" "Run core db config job"
+    run_core_init_db_job
+  fi
+
+  rm -rf ${TMP_WORK_DIR}
+  if [ -z "$(ls tmp)" ] ; then
+    rm -rf tmp
+  fi
+  exit 0
+fi
+
 # backup
 if [ ${COMMAND} = 'backup' ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
   brlog "INFO" "Start backup postgresql..."
   run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
   export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \

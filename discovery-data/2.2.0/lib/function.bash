@@ -59,8 +59,8 @@ validate_version(){
 }
 
 get_version(){
-  if [ -n "`oc get pod ${OC_ARGS} -l release=${TENANT_NAME},app=operator,service=discovery`" ] ; then
-    local version=`oc get wd ${OC_ARGS} -l release=${TENANT_NAME} -o jsonpath='{.items[0].spec.version}'`
+  if [ -n "`oc get wd ${OC_ARGS} ${TENANT_NAME}`" ] ; then
+    local version=`oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath='{.spec.version}'`
     echo "${version%%-*}"
   elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
     if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
@@ -196,9 +196,9 @@ kube_cp_from_local(){
     rm -rf ${SPLITE_DIR}
     mkdir -p ${SPLITE_DIR}
     split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
-    for file in ${SPLITE_DIR}/*; do
-      FILE_BASE_NAME=$(basename "${file}")
-      oc cp $@ "${file}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
+    for splitfile in ${SPLITE_DIR}/*; do
+      FILE_BASE_NAME=$(basename "${splitfile}")
+      oc cp $@ "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
     done
     rm -rf ${SPLITE_DIR}
     run_cmd_in_pod ${POD} "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*" $@
@@ -253,9 +253,9 @@ kube_cp_to_local(){
     mkdir -p ${SPLITE_DIR}
     run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
     FILE_LIST=`oc exec $@ ${POD} -- sh -c "ls ${POD_BACKUP}.split.*"`
-    for file in ${FILE_LIST} ; do
-      FILE_BASE_NAME=$(basename "${file}")
-      oc cp $@ "${POD}:${file}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
+    for splitfile in ${FILE_LIST} ; do
+      FILE_BASE_NAME=$(basename "${splitfile}")
+      oc cp $@ "${POD}:${splitfile}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
     done
     cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
     rm -rf ${SPLITE_DIR}
@@ -296,7 +296,7 @@ fetch_cmd_result(){
       brlog "WARN" "Failed to get command result. Failure count: ${fail_count}" >&2
       fail_count=$((fail_count += 1))
       if [ ${fail_count} -gt ${MAX_CMD_FAILURE_COUNT} ] ; then
-        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times."
+        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times." >&2
         exit 1
       fi
       sleep ${MONITOR_CMD_INTERVAL}
@@ -420,12 +420,9 @@ quiesce(){
   fi
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
 
-  # Check there are no DOCPROC application in yarn cue.
   while :
   do
-    if ! oc get ${OC_ARGS} pod -l "tenant=${TENANT_NAME},run in (rcm, glimpse-builder, glimpse-query)" | grep -e "rcm" -e "glimpse" > /dev/null ; then
-      break
-    fi
+    oc ${OC_ARGS} get wd ${TENANT_NAME} -o jsonpath='{.status.customResourceQuiesce}' | grep -e "^QUIESCED" > /dev/null && break
     sleep 10
   done
 
@@ -434,12 +431,40 @@ quiesce(){
   echo
 }
 
+get_image_repo(){
+  local utils_image="`oc get ${OC_ARGS} deploy -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep wd-utils | tail -n1`"
+  echo "${utils_image%/*}"
+}
+
+get_migrator_repo(){
+  local repo="`get_image_repo`"
+  echo "${repo%/}/wd-migrator"
+}
+
 get_migrator_tag(){
-  local wd_version=`get_version`
+  local wd_version=${WD_VERSION:-`get_version`}
   if [ "${wd_version}" = "2.2.0" ] ; then
     echo "12.0.6-2031"
-  else
+  elif [ "${wd_version}" = "2.2.1" ] ; then
     echo "12.0.7-3010"
+  elif [ "${wd_version}" = "4.0.0" ] ; then
+    echo "12.0.8-5028@sha256:a74a705b072a25f01c98a4ef5b4e7733ceb7715c042cc5f7876585b5359f1f65"
+  else
+    echo "12.0.9-7007@sha256:f604cbed6f6517c6bd8c11dc6dd13da9299c73c36d00c36d60129a798e52dcbb"
+  fi
+}
+
+get_migrator_image(){
+  echo "`get_migrator_repo`:${MIGRATOR_TAG:-`get_migrator_tag`}"
+}
+
+# Get postgres configure image tag in 4.0.0 or later.
+get_pg_config_tag(){
+  local wd_version=${WD_VERSION:-`get_version`}
+  if [ "${wd_version}" = "4.0.0" ] ; then
+    echo "20210604-150426-1103-5d09428b@sha256:52d3dd27728388458aaaca2bc86d06f9ad61b7ffcb6abbbb1a87d11e6635ebbf"
+  elif [ "${wd_version}" = "4.0.2" ] ; then
+    echo "20210901-003512-1193-d0afc1d9@sha256:1db665ab92d4a8e6ef6d46921cec8c0883562e6330aa37f12fe005d3129aa3b5"
   fi
 }
 
@@ -453,32 +478,37 @@ launch_migrator_job(){
   MIGRATOR_MEMORY_LIMITS="${MIGRATOR_MEMORY_LIMITS:-4Gi}"
   MIGRATOR_MAX_HEAP="${MIGRATOR_MAX_HEAP:-3g}"
 
-  WD_MIGRATOR_REPO="`oc get ${OC_ARGS} wd ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}'`wd-migrator"
-  WD_MIGRATOR_TAG="${MIGRATOR_TAG}"
-  WD_MIGRATOR_IMAGE="${WD_MIGRATOR_REPO}:${WD_MIGRATOR_TAG}"
-  PG_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}"`
-  PG_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}"`
+  WD_MIGRATOR_IMAGE="`get_migrator_image`"
+  PG_CONFIGMAP=`get_pg_configmap`
+  PG_SECRET=`get_pg_secret`
   ETCD_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=etcd-cxn -o jsonpath="{.items[0].metadata.name}"`
   ETCD_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=etcd-root -o jsonpath="{.items[*].metadata.name}"`
   CK_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=ck-secret -o jsonpath="{.items[*].metadata.name}"`
   MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
   MINIO_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=minio-auth -o jsonpath="{.items[*].metadata.name}"`
-  DISCO_SVC_ACCOUNT=`oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`get_service_account`
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  WD_VERSION=${WD_VERSION:-`get_version`}
+  if [ `compare_version "${WD_VERSION}" "2.2.1"` -le 0 ] ; then
+    PG_SECRET_PASS_KEY="STKEEPER_PG_SU_PASSWORD"
+  else
+    PG_SECRET_PASS_KEY="pg_su_password"
+  fi
 
-  sed -e "s/@namespace@/${NAMESPACE}/g" \
-    -e "s/@svc-account@/${DISCO_SVC_ACCOUNT}/g" \
-    -e "s|@image@|${WD_MIGRATOR_IMAGE}|g" \
-    -e "s/@max-heap@/${MIGRATOR_MAX_HEAP}/g" \
-    -e "s/@pg-configmap@/${PG_CONFIGMAP}/g" \
-    -e "s/@pg-secret@/${PG_SECRET}/g" \
-    -e "s/@etcd-configmap@/${ETCD_CONFIGMAP}/g" \
-    -e "s/@etcd-secret@/${ETCD_SECRET}/g" \
-    -e "s/@minio-secret@/${MINIO_SECRET}/g" \
-    -e "s/@minio-configmap@/${MINIO_CONFIGMAP}/g" \
-    -e "s/@ck-secret@/${CK_SECRET}/g" \
-    -e "s/@cpu-limit@/${MIGRATOR_CPU_LIMITS}/g" \
-    -e "s/@memory-limit@/${MIGRATOR_MEMORY_LIMITS}/g" \
+  sed -e "s/#namespace#/${NAMESPACE}/g" \
+    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
+    -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
+    -e "s/#max-heap#/${MIGRATOR_MAX_HEAP}/g" \
+    -e "s/#pg-configmap#/${PG_CONFIGMAP}/g" \
+    -e "s/#pg-secret#/${PG_SECRET}/g" \
+    -e "s/#etcd-configmap#/${ETCD_CONFIGMAP}/g" \
+    -e "s/#etcd-secret#/${ETCD_SECRET}/g" \
+    -e "s/#minio-secret#/${MINIO_SECRET}/g" \
+    -e "s/#minio-configmap#/${MINIO_CONFIGMAP}/g" \
+    -e "s/#ck-secret#/${CK_SECRET}/g" \
+    -e "s/#cpu-limit#/${MIGRATOR_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${MIGRATOR_MEMORY_LIMITS}/g" \
+    -e "s/#pg-pass-key#/${PG_SECRET_PASS_KEY}/g" \
     "${MIGRATOR_JOB_TEMPLATE}" > "${MIGRATOR_JOB_FILE}"
 
   oc ${OC_ARGS} apply -f "${MIGRATOR_JOB_FILE}"
@@ -537,7 +567,6 @@ run_core_init_db_job(){
   JOB_NAME=`oc get ${OC_ARGS} job -o jsonpath="{.items[0].metadata.name}" -l "${label}"`
   oc delete ${OC_ARGS} job -l "${label}"
   oc delete pod -l "release=${TENANT_NAME},app=operator"
-  MAX_MIGRATOR_JOB_WAIT_COUNT=40
   get_job_pod "${label}"
   wait_job_running ${POD}
   brlog "INFO" "Waiting for core db config job to be completed..."
@@ -586,7 +615,109 @@ add_env_to_job_yaml(){
   shift
   local yaml_file=$1
   shift
-  sed -i -e "s/          env:/          env:\n            - name: ${env_name}\n              value: \"${env_value}\"/" "${yaml_file}"
+  sed -i -e "s|          env:|          env:\n            - name: ${env_name}\n              value: \"${env_value}\"|" "${yaml_file}"
+}
+
+add_config_env_to_job_yaml(){
+  local env_name=$1
+  shift
+  local config_map=$1
+  shift
+  local config_key=$1
+  shift
+  local yaml_file=$1
+  shift
+  sed -i -e "s/          env:/          env:\n            - name: ${env_name}\n              valueFrom:\n                configMapKeyRef:\n                  name: ${config_map}\n                  key: ${config_key}/" "${yaml_file}"
+}
+
+add_secret_env_to_job_yaml(){
+  local env_name=$1
+  shift
+  local secret_name=$1
+  shift
+  local secret_key=$1
+  shift
+  local yaml_file=$1
+  shift
+  sed -i -e "s/          env:/          env:\n            - name: ${env_name}\n              valueFrom:\n                secretKeyRef:\n                  name: ${secret_name}\n                  key: ${secret_key}/" "${yaml_file}"
+}
+
+get_service_account(){
+  local version=`get_version`
+  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+    echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+  else
+    echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin,tenant=${TENANT_NAME} -o jsonpath="{.items[*].metadata.name}"`
+  fi
+}
+
+get_pg_configmap(){
+  local version=`get_version`
+  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+    echo `oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}"`
+  else
+    echo `oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres -o jsonpath="{.items[0].metadata.name}"`
+  fi
+}
+
+get_pg_secret(){
+  local version=`get_version`
+  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+    echo `oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}"`
+  else
+    echo `oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres-wd"`
+  fi
+}
+
+run_pg_job(){
+  local wd_version=${WD_VERSION:-`get_version`}
+  PG_BACKUP_RESTORE_SCRIPTS="postgresql-backup-restore-in-pod.sh"
+  JOB_CPU_LIMITS="${MC_CPU_LIMITS:-800m}" # backward compatibility
+  JOB_CPU_LIMITS="${JOB_CPU_LIMITS:-800m}"
+  JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
+  JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  PG_IMAGE="`get_migrator_image`"
+  if [ `compare_version "${wd_version}" "2.2.0"` -eq 0 ] ; then
+    PG_IMAGE="`oc get ${OC_ARGS} pod -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep "edb-postgresql-12:ubi8-amd64" | tail -n1`"
+  fi
+  PG_CONFIGMAP=`get_pg_configmap`
+  PG_SECRET=`get_pg_secret`
+  PG_PASSWORD_KEY="pg_su_password"
+  if [ `compare_version "${wd_version}" "4.0.0"` -lt 0 ] ; then
+    PG_PASSWORD_KEY="STKEEPER_PG_SU_PASSWORD"
+  fi
+  DISCO_SVC_ACCOUNT=`get_service_account`
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  CURRENT_TZ=`date "+%z" | tr -d '0'`
+  if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
+    TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
+  else
+    TZ_OFFSET="UTC+`echo ${CURRENT_TZ} | tr -d '-'`"
+  fi
+
+  sed -e "s/#namespace#/${NAMESPACE}/g" \
+    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
+    -e "s|#image#|${PG_IMAGE}|g" \
+    -e "s/#cpu-limit#/${JOB_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${JOB_MEMORY_LIMITS}/g" \
+    -e "s|#command#|./${PG_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
+    -e "s/#job-name#/${PG_BACKUP_RESTORE_JOB}/g" \
+    -e "s/#tenant#/${TENANT_NAME}/g" \
+    "${PG_JOB_TEMPLATE}" > "${PG_JOB_FILE}"
+
+  add_config_env_to_job_yaml "PGUSER" "${PG_CONFIGMAP}" "username" "${PG_JOB_FILE}"
+  add_config_env_to_job_yaml "PGHOST" "${PG_CONFIGMAP}" "host" "${PG_JOB_FILE}"
+  add_config_env_to_job_yaml "PGPORT" "${PG_CONFIGMAP}" "port" "${PG_JOB_FILE}"
+  add_secret_env_to_job_yaml "PGPASSWORD" "${PG_SECRET}" "${PG_PASSWORD_KEY}" "${PG_JOB_FILE}"
+  add_env_to_job_yaml "PG_ARCHIVE_OPTION" "${PG_ARCHIVE_OPTION}" "${PG_JOB_FILE}"
+  add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${PG_JOB_FILE}"
+  add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${PG_JOB_FILE}"
+
+  oc ${OC_ARGS} delete -f "${PG_JOB_FILE}" &> /dev/null || true
+  oc ${OC_ARGS} apply -f "${PG_JOB_FILE}"
+  get_job_pod "app.kubernetes.io/component=${PG_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
+  wait_job_running ${POD}
 }
 
 add_volume_to_job_yaml(){

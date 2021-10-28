@@ -3,14 +3,12 @@ kind: Job
 metadata:
   labels:
     app.kubernetes.io/component: wire-postgresql-restore
-    app.kubernetes.io/instance: @release@
-    app.kubernetes.io/managed-by: Tiller
+    app.kubernetes.io/instance: #release#
     app.kubernetes.io/name: discovery
-    helm.sh/chart: ibm-watson-discovery-@release@-prod
-    release: @release@
+    release: #release#
     service: discovery
-  name: @release@-discovery-wire-postgres-restore
-  namespace: @namespace@
+  name: #release#-discovery-wire-postgres-restore
+  namespace: #namespace#
 spec:
   backoffLimit: 6
   template:
@@ -18,16 +16,14 @@ spec:
       creationTimestamp: null
       labels:
         app.kubernetes.io/component: wire-postgres-restore
-        app.kubernetes.io/instance: @release@
-        app.kubernetes.io/managed-by: Tiller
+        app.kubernetes.io/instance: #release#
         app.kubernetes.io/name: discovery
-        helm.sh/chart: ibm-watson-discovery-@release@-prod
         service: discovery
-        job-name: @release@-discovery-wire-postgres-restore
-        release: @release@
+        job-name: #release#-discovery-wire-postgres-restore
+        release: #release#
     spec:
-      serviceAccount: @service-account@
-      serviceAccountName: @service-account@
+      serviceAccount: #service-account#
+      serviceAccountName: #service-account#
       hostNetwork: false
       hostPID: false
       hostIPC: false
@@ -53,40 +49,40 @@ spec:
                       - ppc64le
                       - s390x
       containers:
-      - image: @image@
+      - image: #image#
         imagePullPolicy: IfNotPresent
         name: postgres-config
         env:
           - name: PG_HOST
             valueFrom:
               configMapKeyRef:
-                name: @pg-configmap@
+                name: #pg-configmap#
                 key: host
           - name: PG_PORT
             valueFrom:
               configMapKeyRef:
-                name: @pg-configmap@
+                name: #pg-configmap#
                 key: port
           - name: PGPASSWORD
             valueFrom:
               secretKeyRef:
-                name: @pg-secret@
-                key: STKEEPER_PG_SU_PASSWORD
+                name: #pg-secret#
+                key: #pg-pass-key#
           - name: PG_USR
             valueFrom:
               configMapKeyRef:
-                name: @pg-configmap@
+                name: #pg-configmap#
                 key: username
           - name: TRAININGCRUD_AUTH
             valueFrom:
               secretKeyRef:
-                name: @pg-secret@
-                key: STKEEPER_PG_SU_PASSWORD
+                name: #pg-secret#
+                key: #pg-pass-key#
           - name: PG_AUTH
             valueFrom:
               secretKeyRef:
-                name: @pg-secret@
-                key: STKEEPER_PG_SU_PASSWORD
+                name: #pg-secret#
+                key: #pg-pass-key#
           - name: PGDATABASE
             value: postgres
           - name: PGSSLMODE

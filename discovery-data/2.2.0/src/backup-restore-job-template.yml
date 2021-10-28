@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: #job-name#-job
+  labels:
+    app.kubernetes.io/component: #job-name#
+    app.kubernetes.io/instance: #tenant#
+    app.kubernetes.io/name: discovery
+    service: discovery
+    tenant: #tenant#
+  namespace: #namespace#
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: #job-name#
+        app.kubernetes.io/instance: #tenant#
+        app.kubernetes.io/name: discovery
+        service: discovery
+        tenant: #tenant#
+    spec:
+      serviceAccount: #svc-account#
+      serviceAccountName: #svc-account#
+      restartPolicy: Never
+      containers:
+        - name: #job-name#
+          image: #image#
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          env:
+            - name: BACKUP_RESTORE_ENV
+              value: br_env
+          resources:
+            limits:
+              cpu: "#cpu-limit#"
+              memory: "#memory-limit#"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              # wait for wexdata to be copied
+              while true;
+              do
+                if [ -e /tmp/wexdata_copied ] ; then
+                  break
+                else
+                  echo "waiting for wexdata to be copied"
+                  sleep 5
+                fi
+              done
+              cd /tmp/backup-restore-workspace
+              #command#
+              touch /tmp/backup-restore-complete
+              while true;
+              do
+                echo "waiting for completion of scripts"
+                sleep 60
+              done
+          volumeMounts:
+            - mountPath: /tmp/backup-restore-workspace
+              name: backup-restore-workspace
+      volumes:
+      terminationGracePeriodSeconds: 0
