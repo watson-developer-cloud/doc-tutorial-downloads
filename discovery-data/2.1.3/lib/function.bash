@@ -155,8 +155,8 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_backup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
@@ -186,15 +186,15 @@ kube_cp_from_local(){
 
   STAT_CMD="`get_stat_command` ${LOCAL_BACKUP}"
   LOCAL_SIZE=`eval "${STAT_CMD}"`
-  if [ ${SPLITE_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
-    for splitfile in ${SPLITE_DIR}/*; do
+  if [ ${SPLIT_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    split -a 5 -b ${SPLIT_SIZE} ${LOCAL_BACKUP} ${SPLIT_DIR}/${LOCAL_BASE_NAME}.split.
+    for splitfile in ${SPLIT_DIR}/*; do
       FILE_BASE_NAME=$(basename "${splitfile}")
       kubectl cp $@ "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
     done
-    rm -rf ${SPLITE_DIR}
+    rm -rf ${SPLIT_DIR}
     kubectl exec $@ ${POD} -- bash -c "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*"
   else
     kubectl cp $@ "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}"
@@ -213,8 +213,8 @@ kube_cp_to_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_backup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
   if "${IS_RECURSIVE}" ; then
@@ -243,17 +243,17 @@ kube_cp_to_local(){
   fi
 
   POD_SIZE=`kubectl $@ exec ${POD} -- bash -c "stat --printf="%s" ${POD_BACKUP}"`
-  if [ ${SPLITE_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    kubectl exec $@ ${POD} -- bash -c "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split."
+  if [ ${SPLIT_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    kubectl exec $@ ${POD} -- bash -c "split -d -a 5 -b ${SPLIT_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split."
     FILE_LIST=`kubectl exec $@ ${POD} -- bash -c "ls ${POD_BACKUP}.split.*"`
     for splitfile in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${splitfile}")
       kubectl cp $@ "${POD}:${splitfile}" "${SPLIT_DIR}/${FILE_BASE_NAME}"
     done
-    cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
-    rm -rf ${SPLITE_DIR}
+    cat ${SPLIT_DIR}/* > ${LOCAL_BACKUP}
+    rm -rf ${SPLIT_DIR}
     kubectl exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
   else
     kubectl cp $@ "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}"

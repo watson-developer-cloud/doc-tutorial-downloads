@@ -4,7 +4,7 @@ set -e
 
 BACKUP_ARGS=""
 BACKUP_DIR="tmp"
-SPLITE_DIR=./tmp_split_backup
+SPLIT_DIR=./tmp_split_backup
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile] [-n namespace]"
@@ -37,8 +37,8 @@ if [ -d "${BACKUP_DIR}" ] ; then
   exit 1
 fi
 
-if [ -d "${SPLITE_DIR}" ] ; then
-  brlog "ERROR" "Please remove ${SPLITE_DIR}"
+if [ -d "${SPLIT_DIR}" ] ; then
+  brlog "ERROR" "Please remove ${SPLIT_DIR}"
   exit 1
 fi
 

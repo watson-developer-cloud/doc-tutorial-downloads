@@ -77,6 +77,7 @@ for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l te
   fi
 done
 
+# if WD v.4.0.0 or BACKUP_RESTORE_IN_POD (--use-job argument given)
 if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD:-false}" ; then
   brlog "INFO" "Start ${COMMAND} postgres..."
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"

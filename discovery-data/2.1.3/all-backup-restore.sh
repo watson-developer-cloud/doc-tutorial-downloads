@@ -6,7 +6,7 @@ BACKUP_ARGS=""
 BACKUP_DIR="tmp"
 BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
-SPLITE_DIR=./tmp_split_backup
+SPLIT_DIR=./tmp_split_backup
 BACKUPFILE_ARCHIVE_OPTION="${BACKUPFILE_ARCHIVE_OPTION-}"
 if [ -n "${BACKUPFILE_ARCHIVE_OPTION}" ] ; then
   read -a BACKUPFILE_TAR_OPTIONS <<< ${BACKUPFILE_ARCHIVE_OPTION}
@@ -73,8 +73,8 @@ if [ -d "${BACKUP_DIR}" ] ; then
   exit 1
 fi
 
-if [ -d "${SPLITE_DIR}" ] ; then
-  brlog "ERROR" "Please remove ${SPLITE_DIR}"
+if [ -d "${SPLIT_DIR}" ] ; then
+  brlog "ERROR" "Please remove ${SPLIT_DIR}"
   exit 1
 fi
 

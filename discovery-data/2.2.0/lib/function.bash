@@ -163,8 +163,8 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_backup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
@@ -192,15 +192,15 @@ kube_cp_from_local(){
 
   STAT_CMD="`get_stat_command` ${LOCAL_BACKUP}"
   LOCAL_SIZE=`eval "${STAT_CMD}"`
-  if [ ${SPLITE_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
-    for splitfile in ${SPLITE_DIR}/*; do
+  if [ ${SPLIT_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    split -a 5 -b ${SPLIT_SIZE} ${LOCAL_BACKUP} ${SPLIT_DIR}/${LOCAL_BASE_NAME}.split.
+    for splitfile in ${SPLIT_DIR}/*; do
       FILE_BASE_NAME=$(basename "${splitfile}")
       oc cp $@ "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
     done
-    rm -rf ${SPLITE_DIR}
+    rm -rf ${SPLIT_DIR}
     run_cmd_in_pod ${POD} "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*" $@
   else
     oc cp $@ "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}"
@@ -219,8 +219,8 @@ kube_cp_to_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_backup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
   if "${IS_RECURSIVE}" ; then
@@ -248,17 +248,17 @@ kube_cp_to_local(){
   fi
 
   POD_SIZE=`oc $@ exec ${POD} -- sh -c "stat -c "%s" ${POD_BACKUP}"`
-  if [ ${SPLITE_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
+  if [ ${SPLIT_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLIT_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
     FILE_LIST=`oc exec $@ ${POD} -- sh -c "ls ${POD_BACKUP}.split.*"`
     for splitfile in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${splitfile}")
-      oc cp $@ "${POD}:${splitfile}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
+      oc cp $@ "${POD}:${splitfile}" "${SPLIT_DIR}/${FILE_BASE_NAME}"
     done
-    cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
-    rm -rf ${SPLITE_DIR}
+    cat ${SPLIT_DIR}/* > ${LOCAL_BACKUP}
+    rm -rf ${SPLIT_DIR}
     oc exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
   else
     oc cp $@ "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}"
@@ -535,7 +535,8 @@ get_job_pod(){
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      brlog "ERROR" "Pod have not been created after 100s"
+      MAX_WAIT_SECS=$((${MAX_WAIT_COUNT} * 5))
+      brlog "ERROR" "Pod has not been created after ${MAX_WAIT_SECS}s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))
@@ -554,7 +555,8 @@ wait_job_running() {
       break
     fi
     if [ ${WAIT_COUNT} -eq ${MAX_WAIT_COUNT} ] ; then
-      brlog "ERROR" "Pod have not run after 100s"
+      MAX_WAIT_SECS=$((${MAX_WAIT_COUNT} * 5))
+      brlog "ERROR" "Pod has not been created after ${MAX_WAIT_SECS}s"
       exit 1
     fi
     WAIT_COUNT=$((WAIT_COUNT += 1))
@@ -677,7 +679,7 @@ run_pg_job(){
   JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
   JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
   NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-  PG_IMAGE="`get_migrator_image`"
+  PG_IMAGE="$(get_migrator_image)"
   if [ `compare_version "${wd_version}" "2.2.0"` -eq 0 ] ; then
     PG_IMAGE="`oc get ${OC_ARGS} pod -l tenant=${TENANT_NAME} -o jsonpath='{..image}' | tr -s '[[:space:]]' '\n' | sort | uniq | grep "edb-postgresql-12:ubi8-amd64" | tail -n1`"
   fi

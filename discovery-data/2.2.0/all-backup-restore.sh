@@ -5,7 +5,7 @@ set -e
 BACKUP_DIR="tmp"
 BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
-SPLITE_DIR=./tmp_split_backup
+SPLIT_DIR=./tmp_split_backup
 OC_ARGS="${OC_ARGS:-}"
 
 TAB="$(printf '\t')"
@@ -17,21 +17,21 @@ Usage:
 Options:
     --help, -h                                 Show help
     --file, -f                                 Specify backup file
-    --log-output-dir="<directory_path>"        Specify output directory of detailed component logs
+    --log-output-dir="<directory_path>"        Specify output directory for detailed component log files
 
 Options (Advanced):
 Basically, you don't need these advanced options.
 
     --archive-on-local                         Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take a long time.
-    --backup-archive-option="<tar_option>"     Tar options for compression used for archiving the backup file. Default: none.
-    --datastore-archive-option="<tar_option>"  Tar options for compression used for archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
-    --postgresql-archive-option="<tar_option>" Tar options for comporession used for archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
-    --etcd-archive-option="<tar_option>"       Tar options used for archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
+    --backup-archive-option="<tar_option>"     Tar options for compression used when archiving the backup file. Default: none.
+    --datastore-archive-option="<tar_option>"  Tar options for compression used when archiving the backup files of ElasticSearch, MinIO and internal configuration. Default: "-z".
+    --postgresql-archive-option="<tar_option>" Tar options for compression used when archiving the backup files of postgresql. Note that the backup files of postgresql are archived on its pod by default. Default: "-z".
+    --etcd-archive-option="<tar_option>"       Tar options used when archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default: "-z".
     --skip-verify-archive                      Skip the all verifying process of the archive.
     --skip-verify-backup                       Skip verifying the backup file.
     --skip-verify-datastore-archive            Skip verifying the archive of datastores.
-    --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if it fails to transfer data to MinIO.
-    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. Its size depends on ephemeral storage.
+    --use-job                                  Use kubernetes job for backup/restore of Postgresql, ElasticSearch or MinIO. Use this flag if it fails to transfer data to MinIO.
+    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of Postgresql, ElasticSearch or MinIO. The size of the PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, --use-job will use emptyDir, in which case its size depends on available ephemeral storage. Has no effect unless --use-job is also set
     --enable-multipart                         Enable multipart upload of MinIO client on kubernetes job.
 EOF
 }
@@ -192,6 +192,10 @@ do
     esac
 done
 
+if [[ -n ${JOB_PVC_NAME} ]] && ${BACKUP_RESTORE_IN_POD:-false} ; then
+  brlog "ERROR" "--pvc option requires --use-job"
+  exit 1
+fi
 
 TENANT_NAME="${TENANT_NAME:-wd}"
 BACKUPFILE_ARCHIVE_OPTION="${BACKUPFILE_ARCHIVE_OPTION-}"
@@ -214,8 +218,8 @@ if [ -d "${BACKUP_DIR}" ] ; then
   exit 1
 fi
 
-if [ -d "${SPLITE_DIR}" ] ; then
-  brlog "ERROR" "Please remove ${SPLITE_DIR}"
+if [ -d "${SPLIT_DIR}" ] ; then
+  brlog "ERROR" "Please remove ${SPLIT_DIR}"
   exit 1
 fi
 
