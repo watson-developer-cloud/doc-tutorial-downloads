@@ -60,6 +60,10 @@ if [ ${COMMAND} = 'restore' ] ; then
   mkdir -p ${TMP_WORK_DIR}
   cd ${TMP_WORK_DIR}
 
+  if ! psql -d dadmin -c "SELECT id FROM tenants" | grep "default" > /dev/null ; then
+    psql -d dadmin -c "UPDATE tenants SET id = 'default'"
+  fi
+
   psql -d dadmin -c "\COPY tenants TO '${TMP_WORK_DIR}/tenants'"
   if ! cat "${TMP_WORK_DIR}/tenants" | grep "default" > /dev/null ; then
     brlog "ERROR" "Can not get tenant information"

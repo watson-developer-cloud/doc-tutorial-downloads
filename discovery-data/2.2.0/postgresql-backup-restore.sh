@@ -215,8 +215,8 @@ if [ ${COMMAND} = 'restore' ] ; then
   export PGHOST=${HOSTNAME} && \
   cd tmp && \
   for DATABASE in $(ls '${PG_BACKUP_DIR}'/*.dump | cut -d "/" -f 2 | sed -e "s/^pg_//g" -e "s/.dump$//g"); do
-  psql -d ${DATABASE} -c "REVOKE CONNECT ON DATABASE ${DATABASE} FROM public;" && \
-  psql -d ${DATABASE} -c "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" && \
+  psql -d ${DATABASE} -c "REVOKE CONNECT ON DATABASE ${DATABASE} FROM public;" || true && \
+  psql -d ${DATABASE} -c "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" || true && \
   dropdb --if-exists ${DATABASE} && \
   createdb ${DATABASE} && \
   psql -d ${DATABASE} -c "GRANT CONNECT ON DATABASE ${DATABASE} TO public;" && \
