@@ -122,7 +122,13 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
     fi
   done
   if [ "${COMMAND}" = "backup" ] ; then
+    brlog "INFO" "Transferring backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${PG_BACKUP}" ${OC_ARGS}
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${PG_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+      brlog "ERROR" "Backup file is broken, or does not exist."
+      oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
+      exit 1
+    fi
   fi
   oc ${OC_ARGS} delete -f "${PG_JOB_FILE}"
 
