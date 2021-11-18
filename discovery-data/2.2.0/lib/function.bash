@@ -441,16 +441,22 @@ get_migrator_repo(){
   echo "${repo%/}/wd-migrator"
 }
 
+declare -A MIGRATOR_TAGS
+MIGRATOR_TAGS=(
+  ["2.2.0"]="12.0.6-2031"
+  ["2.2.1"]="12.0.7-3010"
+  ["4.0.0"]="12.0.8-5028@sha256:a74a705b072a25f01c98a4ef5b4e7733ceb7715c042cc5f7876585b5359f1f65"
+  ["4.0.2"]="12.0.9-7007@sha256:f604cbed6f6517c6bd8c11dc6dd13da9299c73c36d00c36d60129a798e52dcbb"
+  ["4.0.3"]="12.0.10-7006@sha256:b4fd94eee9dade78a32dce828f0b640ae382cc300f746ad5af3c49cea276e43a"
+)
+
 get_migrator_tag(){
   local wd_version=${WD_VERSION:-`get_version`}
-  if [ "${wd_version}" = "2.2.0" ] ; then
-    echo "12.0.6-2031"
-  elif [ "${wd_version}" = "2.2.1" ] ; then
-    echo "12.0.7-3010"
-  elif [ "${wd_version}" = "4.0.0" ] ; then
-    echo "12.0.8-5028@sha256:a74a705b072a25f01c98a4ef5b4e7733ceb7715c042cc5f7876585b5359f1f65"
+  if [ -n "${MIGRATOR_TAGS["${wd_version}"]+UNDEFINE}" ] ; then
+    echo "${MIGRATOR_TAGS["${wd_version}"]}"
   else
-    echo "12.0.9-7007@sha256:f604cbed6f6517c6bd8c11dc6dd13da9299c73c36d00c36d60129a798e52dcbb"
+    brlog "ERROR" "Can not find migrator image tag for ${wd_version}" >&2
+    exit 1
   fi
 }
 
@@ -459,12 +465,21 @@ get_migrator_image(){
 }
 
 # Get postgres configure image tag in 4.0.0 or later.
+
+declare -A PG_CONFIG_TAGS
+PG_CONFIG_TAGS=(
+  ["4.0.0"]="20210604-150426-1103-5d09428b@sha256:52d3dd27728388458aaaca2bc86d06f9ad61b7ffcb6abbbb1a87d11e6635ebbf"
+  ["4.0.2"]="20210901-003512-1193-d0afc1d9@sha256:1db665ab92d4a8e6ef6d46921cec8c0883562e6330aa37f12fe005d3129aa3b5"
+  ["4.0.3"]="20211022-003507-1246-a9166aca@sha256:c177dc8aa05e0e072e8f786a7ebd144f84643c395952757d3af08636626914c2"
+)
+
 get_pg_config_tag(){
   local wd_version=${WD_VERSION:-`get_version`}
-  if [ "${wd_version}" = "4.0.0" ] ; then
-    echo "20210604-150426-1103-5d09428b@sha256:52d3dd27728388458aaaca2bc86d06f9ad61b7ffcb6abbbb1a87d11e6635ebbf"
-  elif [ "${wd_version}" = "4.0.2" ] ; then
-    echo "20210901-003512-1193-d0afc1d9@sha256:1db665ab92d4a8e6ef6d46921cec8c0883562e6330aa37f12fe005d3129aa3b5"
+  if [ -n "${PG_CONFIG_TAGS["${wd_version}"]+UNDEFINE}" ] ; then
+    echo "${PG_CONFIG_TAGS["${wd_version}"]}"
+  else
+    brlog "ERROR" "Can not find configure-postgres image tag for ${wd_version}" >&2
+    exit 1
   fi
 }
 
@@ -518,7 +533,7 @@ get_job_pod(){
   local label=$1
   brlog "INFO" "Waiting for job pod"
   POD=""
-  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-200}
+  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-400}
   WAIT_COUNT=0
   while :
   do
@@ -545,7 +560,7 @@ get_job_pod(){
 
 wait_job_running() {
   POD=$1
-  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-200}
+  MAX_WAIT_COUNT=${MAX_MIGRATOR_JOB_WAIT_COUNT:-400}
   WAIT_COUNT=0
   while :
   do
@@ -565,6 +580,7 @@ wait_job_running() {
 run_core_init_db_job(){
   local label="tenant=${TENANT_NAME},run=core-database-init"
   JOB_NAME=`oc get ${OC_ARGS} job -o jsonpath="{.items[0].metadata.name}" -l "${label}"`
+  oc delete pod -l "${label}"
   oc delete ${OC_ARGS} job -l "${label}"
   oc delete pod -l "release=${TENANT_NAME},app=operator"
   get_job_pod "${label}"
@@ -645,9 +661,9 @@ add_secret_env_to_job_yaml(){
 get_service_account(){
   local version=`get_version`
   if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
-    echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin-sa -o jsonpath="{.items[*].metadata.name}"`
+    echo `oc ${OC_ARGS} get serviceaccount -l cpd_module=watson-discovery-adm-setup -o jsonpath="{.items[0].metadata.name}"`
   else
-    echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin,tenant=${TENANT_NAME} -o jsonpath="{.items[*].metadata.name}"`
+    echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin,tenant=${TENANT_NAME} -o jsonpath="{.items[0].metadata.name}"`
   fi
 }
 
