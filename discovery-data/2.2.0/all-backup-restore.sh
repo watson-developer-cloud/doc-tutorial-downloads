@@ -205,7 +205,7 @@ VERIFY_BACKUPFILE=${VERIFY_BACKUPFILE:-$VERIFY_ARCHIVE}
 
 verify_args
 
-export WD_VERSION=`get_version`
+export WD_VERSION=${WD_VERSION:-`get_version`}
 brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
 validate_version
 
