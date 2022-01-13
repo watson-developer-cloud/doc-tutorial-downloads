@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/lib/function.bash"
 OC_ARGS="${OC_ARGS:-}" 
 MINIO_BACKUP="minio_backup.tar.gz"
 MINIO_BACKUP_DIR="${MINIO_BACKUP_DIR:-minio_backup}"
-MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 TMP_WORK_DIR="tmp/minio_workspace"
 MINIO_JOB_FILE="${SCRIPT_DIR}/src/minio-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
@@ -56,12 +55,7 @@ fi
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
-MINIO_SVC=`oc ${OC_ARGS} get svc -l release=${TENANT_NAME}-minio,helm.sh/chart=ibm-minio -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep headless`
-MINIO_PORT=`oc ${OC_ARGS} get svc ${MINIO_SVC} -o jsonpath="{.spec.ports[0].port}"`
-MINIO_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=minio-auth -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep minio`
-MINIO_ACCESS_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.accesskey}}' | base64 --decode`
-MINIO_SECRET_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.secretkey}}' | base64 --decode`
-MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-https://localhost:$MINIO_FORWARD_PORT}
+setup_minio_env
 
 rm -rf ${TMP_WORK_DIR}
 

@@ -6,9 +6,17 @@ BACKUP_DIR="tmp"
 BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
 SPLITE_DIR=./tmp_split_bakcup
-OC_ARGS="${OC_ARGS:-}"
+EXTRA_OC_ARGS="${EXTRA_OC_ARGS:-}"
 
-TAB="$(printf '\t')"
+SCRIPT_DIR=$(dirname $0)
+
+. ${SCRIPT_DIR}/lib/function.bash
+
+set_scripts_version
+
+###############
+# Parse args
+###############
 printUsage() {
 cat << EOF
 Usage:
@@ -36,12 +44,6 @@ Basically, you don't need these advanced options.
 EOF
 }
 
-SCRIPT_DIR=$(dirname $0)
-
-. ${SCRIPT_DIR}/lib/function.bash
-
-set_scripts_version
-
 while [[ $# -gt 0 ]]
 do
   OPT=$1
@@ -63,7 +65,7 @@ do
         brlog "ERROR" "option requires an argument: $1"
         exit 1
       fi
-      OC_ARGS="${OC_ARGS} -n $2"
+      EXTRA_OC_ARGS="${EXTRA_OC_ARGS} -n $2"
       shift 2
       ;;
     -f | --file)
@@ -192,6 +194,9 @@ do
     esac
 done
 
+###############
+# Constants
+###############
 
 TENANT_NAME="${TENANT_NAME:-wd}"
 BACKUPFILE_ARCHIVE_OPTION="${BACKUPFILE_ARCHIVE_OPTION-}"
@@ -207,6 +212,16 @@ verify_args
 
 export WD_VERSION=${WD_VERSION:-`get_version`}
 brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
+
+export COMMAND=${COMMAND}
+export TENANT_NAME=${TENANT_NAME}
+export SCRIPT_DIR=${SCRIPT_DIR}
+export OC_ARGS="${EXTRA_OC_ARGS}"
+
+###############
+# Prerequisite
+###############
+
 validate_version
 
 if [ -d "${BACKUP_DIR}" ] ; then
@@ -219,13 +234,26 @@ if [ -d "${SPLITE_DIR}" ] ; then
   exit 1
 fi
 
-export COMMAND=${COMMAND}
-export TENANT_NAME=${TENANT_NAME}
-export SCRIPT_DIR=${SCRIPT_DIR}
-export OC_ARGS=${OC_ARGS}
+###############
+# Function
+###############
+
+run () {
+  for COMP in ${ALL_COMPONENT[@]}
+  do
+    "${SCRIPT_DIR}"/${COMP}-backup-restore.sh ${COMMAND} ${TENANT_NAME} -f "${BACKUP_DIR}/${COMP}.backup"
+  done
+}
+
+###############
+# Main
+###############
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
+
+check_datastore_available
+
 if ! "${BACKUP_RESTORE_IN_POD:-false}" ; then
   brlog "INFO" "Getting mc command for backup/restore of MinIO and ElasticSearch"
   if [ -n "${MC_COMMAND+UNDEF}" ] ; then
@@ -239,13 +267,6 @@ fi
 
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 brlog "INFO" "Component log directory: ${BACKUP_RESTORE_LOG_DIR}"
-
-run () {
-  for COMP in ${ALL_COMPONENT[@]}
-  do
-    "${SCRIPT_DIR}"/${COMP}-backup-restore.sh ${COMMAND} ${TENANT_NAME} -f "${BACKUP_DIR}/${COMP}.backup"
-  done
-}
 
 quiesce
 
@@ -290,7 +311,7 @@ fi
 unquiesce
 
 if [ "$COMMAND" = "restore" ] ; then
-  ./post-restore.sh ${TENANT_NAME}
+  ${SCRIPT_DIR}/post-restore.sh ${TENANT_NAME}
 fi
 
 brlog "INFO" "Clean up"

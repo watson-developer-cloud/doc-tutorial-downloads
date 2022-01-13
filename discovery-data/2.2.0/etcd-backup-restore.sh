@@ -53,14 +53,7 @@ mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
 wd_version=${WD_VERSION:-`get_version`}
 
-ETCD_SERVICE=`oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,tenant=${TENANT_NAME}" | tr '[[:space:]]' '\n' | grep etcd-client || echo ""`
-if [ -z "${ETCD_SERVICE}" ] ; then
-  # Etcd label changed on 4.0.4
-  ETCD_SERVICE=`oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,etcd_cluster=${TENANT_NAME}-discovery-etcd" | tr '[[:space:]]' '\n' | grep etcd-client`
-fi
-ETCD_SECRET=`oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root`
-ETCD_USER=`oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode`
-ETCD_PASSWORD=`oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode`
+setup_etcd_env
 
 # backup etcd
 if [ ${COMMAND} = 'backup' ] ; then

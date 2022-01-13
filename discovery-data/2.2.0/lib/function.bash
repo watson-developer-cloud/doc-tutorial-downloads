@@ -449,6 +449,7 @@ MIGRATOR_TAGS=(
   ["4.0.2"]="12.0.9-7007@sha256:f604cbed6f6517c6bd8c11dc6dd13da9299c73c36d00c36d60129a798e52dcbb"
   ["4.0.3"]="12.0.10-7006@sha256:b4fd94eee9dade78a32dce828f0b640ae382cc300f746ad5af3c49cea276e43a"
   ["4.0.4"]="12.0.11-7050@sha256:de8f09a0396301b02fde2e15973dbfc7d923af5946ea1592a6c4fd6c859b8524"
+  ["4.0.5"]="12.0.12-8043@sha256:ce430b4d5dc9487586f3d539e68de6378982862a6ecb26e319b74bb68f4a2785"
 )
 
 get_migrator_tag(){
@@ -473,6 +474,7 @@ PG_CONFIG_TAGS=(
   ["4.0.2"]="20210901-003512-1193-d0afc1d9@sha256:1db665ab92d4a8e6ef6d46921cec8c0883562e6330aa37f12fe005d3129aa3b5"
   ["4.0.3"]="20211022-003507-1246-a9166aca@sha256:c177dc8aa05e0e072e8f786a7ebd144f84643c395952757d3af08636626914c2"
   ["4.0.4"]="20211212-155002-4-f1f28c77@sha256:bd53e3c80b2a572bf007eae1c144951c1dcda6315e972ffe2491f98994e919a4"
+  ["4.0.5"]="20211221-172037-14-e854223f@sha256:de27642e2e8dc56073ebde40ba2277416ce345f3f132c8f6146329459d1a8732"
 )
 
 get_pg_config_tag(){
@@ -661,8 +663,8 @@ add_secret_env_to_job_yaml(){
 }
 
 get_service_account(){
-  local version=`get_version`
-  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+  local wd_version=${WD_VERSION:-`get_version`}
+  if [ `compare_version "${wd_version}" "2.2.1"` -le 0 ] ; then
     echo `oc ${OC_ARGS} get serviceaccount -l cpd_module=watson-discovery-adm-setup -o jsonpath="{.items[0].metadata.name}"`
   else
     echo `oc ${OC_ARGS} get serviceaccount -l app.kubernetes.io/component=admin,tenant=${TENANT_NAME} -o jsonpath="{.items[0].metadata.name}"`
@@ -670,8 +672,8 @@ get_service_account(){
 }
 
 get_pg_configmap(){
-  local version=`get_version`
-  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+  local wd_version=${WD_VERSION:-`get_version`}
+  if [ `compare_version "${wd_version}" "2.2.1"` -le 0 ] ; then
     echo `oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}"`
   else
     echo `oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres -o jsonpath="{.items[0].metadata.name}"`
@@ -679,8 +681,8 @@ get_pg_configmap(){
 }
 
 get_pg_secret(){
-  local version=`get_version`
-  if [ `compare_version "${version}" "2.2.1"` -le 0 ] ; then
+  local wd_version=${WD_VERSION:-`get_version`}
+  if [ `compare_version "${wd_version}" "2.2.1"` -le 0 ] ; then
     echo `oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}"`
   else
     echo `oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres-wd"`
@@ -773,4 +775,92 @@ verify_args(){
     brlog "ERROR" "PVC not found: ${JOB_PVC_NAME}"
     exit 1
   fi
+}
+
+get_primary_pg_pod(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
+    echo "$(oc get pod ${OC_ARGS} -l "postgresql=${TENANT_NAME}-discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
+  else
+    for POD in $(oc get pods ${OC_ARS} -o jsonpath='{.items[0].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
+      if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
+        echo "${POD}"
+        break
+      fi
+    done
+  fi
+}
+
+setup_minio_env(){
+  MINIO_SVC=`oc ${OC_ARGS} get svc -l release=${TENANT_NAME}-minio,helm.sh/chart=ibm-minio -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep headless`
+  MINIO_PORT=`oc ${OC_ARGS} get svc ${MINIO_SVC} -o jsonpath="{.spec.ports[0].port}"`
+  MINIO_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=minio-auth -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep minio`
+  MINIO_ACCESS_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.accesskey}}' | base64 --decode`
+  MINIO_SECRET_KEY=`oc get ${OC_ARGS} secret ${MINIO_SECRET} --template '{{.data.secretkey}}' | base64 --decode`
+  MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
+  MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-https://localhost:$MINIO_FORWARD_PORT}
+}
+
+check_datastore_available(){
+  brlog "INFO" "Checking status of data store"
+  check_etcd_available || { brlog "ERROR" "Etcd is unavailable"; return 1; }
+  check_postgres_available || { brlog "ERROR" "Postgresql is unavailable"; return 1; }
+  check_elastic_available || { brlog "ERROR" "ElasticSearch is unavailable"; return 1; }
+  check_minio_avairable || { brlog "ERROR" "MinIO is unavailable"; return 1; }
+  brlog "INFO" "All data store service are available"
+}
+
+check_etcd_available(){
+  setup_etcd_env
+  ETCD_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)
+  oc exec ${OC_ARGS} "${ETCD_POD}" -- bash -c "export ETCDCTL_USER='${ETCD_USER}:${ETCD_PASSWORD}' && \
+  export ETCDCTL_CERT='/etc/etcdtls/operator/etcd-tls/etcd-client.crt' && \
+  export ETCDCTL_CACERT='/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt' && \
+  export ETCDCTL_KEY='/etc/etcdtls/operator/etcd-tls/etcd-client.key' && \
+  export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379' && \
+  etcdctl endpoint health > /dev/null" || return 1
+  return 0
+}
+
+setup_etcd_env(){
+  ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,tenant=${TENANT_NAME}" | tr '[[:space:]]' '\n' | grep etcd-client || echo "")
+  if [ -z "${ETCD_SERVICE}" ] ; then
+    # Etcd label changed on 4.0.4
+    ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,etcd_cluster=${TENANT_NAME}-discovery-etcd" | tr '[[:space:]]' '\n' | grep etcd-client)
+  fi
+  ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root)
+  ETCD_USER=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode)
+  ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
+}
+
+check_postgres_available(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  PG_POD=$(get_primary_pg_pod)
+  if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
+    PGUSER="postgres"
+    PG_SECRET="$(get_pg_secret)"
+    PGPASSWORD="$(oc get secret ${PG_SECRET} --template '{{.data.pg_su_password}}' | base64 --decode)"
+  else
+    PGUSER='${STKEEPER_PG_SU_USERNAME}'
+    PGPASSWORD='${STKEEPER_PG_SU_PASSWORD}'
+  fi
+  oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
+  PGPASSWORD='"${PGPASSWORD}"' \
+  PGHOST=${HOSTNAME} \
+  psql -q "dbname=postgres connect_timeout=10" -c "SET lock_timeout = 10000; SET statement_timeout = 10000; SELECT version()" > /dev/null' || return 1
+  return 0
+}
+
+check_elastic_available(){
+  ELASTIC_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True`
+  oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
+  curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | grep "\"status\":\"yellow\"\\|\"status\":\"green\"" > /dev/null' || return 1
+  return 0
+}
+
+check_minio_avairable(){
+  setup_minio_env
+  ELASTIC_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True`
+  oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c "curl -ks 'https://${MINIO_SVC}:${MINIO_PORT}/minio/health/ready' -w '%{http_code}' -o /dev/null | grep 200 > /dev/null" || return 1
+  return 0
 }
