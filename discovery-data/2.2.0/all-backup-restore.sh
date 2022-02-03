@@ -301,6 +301,10 @@ if [ ${COMMAND} = 'backup' ] ; then
 fi
 
 if [ ${COMMAND} = 'restore' ] ; then
+  if [ $(compare_version "${WD_VERSION}" "4.0.5") -le 0 ] && ! check_instance_exists ; then
+    brlog "ERROR" "Please provision WatsonDiscovery instance on CP4D UI."
+    exit 1
+  fi
   tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
   export BACKUP_FILE_VERSION=`get_backup_version`
   ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")

@@ -782,7 +782,7 @@ get_primary_pg_pod(){
   if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "postgresql=${TENANT_NAME}-discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
   else
-    for POD in $(oc get pods ${OC_ARS} -o jsonpath='{.items[0].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
+    for POD in $(oc get pods ${OC_ARS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
       if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
         echo "${POD}"
         break
@@ -833,9 +833,8 @@ setup_etcd_env(){
   ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
 }
 
-check_postgres_available(){
+setup_pg_connection_info(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  PG_POD=$(get_primary_pg_pod)
   if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
     PGUSER="postgres"
     PG_SECRET="$(get_pg_secret)"
@@ -844,6 +843,12 @@ check_postgres_available(){
     PGUSER='${STKEEPER_PG_SU_USERNAME}'
     PGPASSWORD='${STKEEPER_PG_SU_PASSWORD}'
   fi
+}
+
+check_postgres_available(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  setup_pg_connection_info
+  PG_POD=$(get_primary_pg_pod)
   oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
   PGPASSWORD='"${PGPASSWORD}"' \
   PGHOST=${HOSTNAME} \
@@ -862,5 +867,16 @@ check_minio_avairable(){
   setup_minio_env
   ELASTIC_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True`
   oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c "curl -ks 'https://${MINIO_SVC}:${MINIO_PORT}/minio/health/ready' -w '%{http_code}' -o /dev/null | grep 200 > /dev/null" || return 1
+  return 0
+}
+
+check_instance_exists(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  setup_pg_connection_info
+  PG_POD=$(get_primary_pg_pod)
+  oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
+  PGPASSWORD='"${PGPASSWORD}"' \
+  PGHOST=${HOSTNAME} \
+  psql -d dadmin -t -c "SELECT * from tenants;" | grep "default" > /dev/null' || return 1
   return 0
 }
