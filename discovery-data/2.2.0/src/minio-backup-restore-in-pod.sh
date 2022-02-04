@@ -78,10 +78,6 @@ if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Archiving data..."
   tar ${MINIO_TAR_OPTIONS[@]} -cf ${MINIO_BACKUP} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
   rm -rf ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${MINIO_TAR_OPTIONS[@]} -tf ${MINIO_BACKUP} &> /dev/null ; then
-    brlog "ERROR" "Backup file is broken, or does not exist."
-    exit 1
-  fi
 fi
 
 # restore
