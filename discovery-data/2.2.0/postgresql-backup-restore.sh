@@ -96,7 +96,7 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
   fi
   oc exec ${POD} -- touch /tmp/wexdata_copied
   brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
-  if [ "${COMMAND}" = "restore" ] ; then
+  if [ "${COMMAND}" = "restore" ] && require_tenant_backup ; then
     brlog "INFO" "Get tenant information."
     while :
     do
@@ -191,18 +191,20 @@ if [ ${COMMAND} = 'restore' ] ; then
     exit 1
   fi
 
-  brlog "INFO" "Get tenant information."
-  run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
-  export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
-  export PGHOST=${HOSTNAME} && \
-  psql -d dadmin -c "COPY tenants TO '"'"'/tmp/tenants'"'"'"' ${OC_ARGS}
-  TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
-  kube_cp_to_local ${PG_POD} "${TENANT_FILE}" "/tmp/tenants" ${OC_ARGS}
-  if ! cat "${TENANT_FILE}" | grep "default" > /dev/null ; then
-    brlog "ERROR" "Can not get tenant information"
-    exit 1
+  if require_tenant_backup ; then
+    brlog "INFO" "Get tenant information."
+    run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
+    export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
+    export PGHOST=${HOSTNAME} && \
+    psql -d dadmin -c "COPY tenants TO '"'"'/tmp/tenants'"'"'"' ${OC_ARGS}
+    TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
+    kube_cp_to_local ${PG_POD} "${TENANT_FILE}" "/tmp/tenants" ${OC_ARGS}
+    if ! cat "${TENANT_FILE}" | grep "default" > /dev/null ; then
+      brlog "ERROR" "Can not get tenant information"
+      exit 1
+    fi
+    run_cmd_in_pod ${PG_POD} 'rm -f /tmp/tenants' ${OC_ARGS}
   fi
-  run_cmd_in_pod ${PG_POD} 'rm -f /tmp/tenants' ${OC_ARGS}
 
   if "${ARCHIVE_ON_LOCAL}" ; then
     brlog "INFO" "Extracting archive"

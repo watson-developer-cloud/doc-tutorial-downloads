@@ -43,7 +43,7 @@ PG_SECRET=`get_pg_secret`
 NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
 SERVICE_ACCOUNT=`get_service_account`
 PG_JOB_NAME="${TENANT_NAME}-discovery-wire-postgres-restore"
-WD_VERSION=`get_version`
+WD_VERSION=${WD_VERSION:-`get_version`}
 if [ `compare_version "${WD_VERSION}" "2.2.1"` -le 0 ] ; then
   PG_SECRET_PASS_KEY="STKEEPER_PG_SU_PASSWORD"
 else

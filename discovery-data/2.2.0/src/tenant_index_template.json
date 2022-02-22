@@ -1,0 +1,244 @@
+{
+  "settings": {
+    "index": {
+      "tenant_id": "#tenant_id#",
+      "mapping": {
+        "nested_fields": {
+          "limit": "400"
+        },
+        "nested_objects": {
+          "limit": "30000"
+        }
+      },
+      "analysis": {
+        "filter": {
+          "synonyms_filter": {
+            "type": "wd_synonym",
+            "enabled": "true",
+            "lenient": "true"
+          },
+          "customer_stop": {
+            "type": "wd_stop",
+            "enabled": "true"
+          },
+          "remove_types": {
+            "mode": "exclude",
+            "type": "keep_types_skip_pos",
+            "types": [
+              "SYM",
+              "PUNCT"
+            ]
+          },
+          "wd_icu_normalizer": {
+            "mode": "compose",
+            "name": "nfkc",
+            "type": "icu_normalizer"
+          },
+          "keywords": {
+            "keywords": [
+              ""
+            ],
+            "type": "keyword_marker"
+          },
+          "stop": {
+            "type": "stop",
+            "stopwords": [
+              "a",
+              "about",
+              "above",
+              "after",
+              "again",
+              "am",
+              "an",
+              "and",
+              "any",
+              "are",
+              "as",
+              "at",
+              "be",
+              "because",
+              "been",
+              "before",
+              "being",
+              "below",
+              "between",
+              "both",
+              "but",
+              "by",
+              "can",
+              "did",
+              "do",
+              "does",
+              "doing",
+              "don",
+              "down",
+              "during",
+              "each",
+              "few",
+              "for",
+              "from",
+              "further",
+              "had",
+              "has",
+              "have",
+              "having",
+              "he",
+              "her",
+              "here",
+              "hers",
+              "herself",
+              "him",
+              "himself",
+              "his",
+              "how",
+              "i",
+              "im",
+              "if",
+              "in",
+              "into",
+              "is",
+              "it",
+              "its",
+              "itself",
+              "just",
+              "me",
+              "more",
+              "most",
+              "my",
+              "myself",
+              "no",
+              "nor",
+              "not",
+              "now",
+              "of",
+              "off",
+              "on",
+              "once",
+              "only",
+              "or",
+              "other",
+              "our",
+              "ours",
+              "ourselves",
+              "out",
+              "over",
+              "own",
+              "s",
+              "same",
+              "she",
+              "should",
+              "so",
+              "some",
+              "such",
+              "t",
+              "than",
+              "that",
+              "the",
+              "their",
+              "theirs",
+              "them",
+              "themselves",
+              "then",
+              "there",
+              "these",
+              "they",
+              "this",
+              "those",
+              "through",
+              "to",
+              "too",
+              "under",
+              "until",
+              "up",
+              "very",
+              "was",
+              "we",
+              "were",
+              "what",
+              "when",
+              "where",
+              "which",
+              "while",
+              "who",
+              "whom",
+              "why",
+              "will",
+              "with",
+              "you",
+              "your",
+              "yours",
+              "yourself",
+              "yourselves"
+            ]
+          }
+        },
+        "char_filter": {
+          "wd_icu_normalizer": {
+            "mode": "compose",
+            "name": "nfkc",
+            "type": "icu_normalizer"
+          }
+        },
+        "analyzer": {
+          "singlelanguage-search": {
+            "filter": [
+              "keywords",
+              "izumo_lemma",
+              "lowercase",
+              "synonyms_filter",
+              "stop",
+              "remove_types",
+              "customer_stop",
+              "asciifolding"
+            ],
+            "char_filter": [
+              "wd_icu_normalizer"
+            ],
+            "tokenizer": "izumo_tokenizer_single_language"
+          },
+          "wd-char-normalizer": {
+            "filter": [
+              "keywords",
+              "lowercase",
+              "asciifolding"
+            ],
+            "char_filter": [
+              "wd_icu_normalizer"
+            ],
+            "tokenizer": "keyword"
+          },
+          "singlelanguage": {
+            "filter": [
+              "keywords",
+              "izumo_lemma",
+              "lowercase",
+              "stop",
+              "remove_types",
+              "asciifolding"
+            ],
+            "char_filter": [
+              "wd_icu_normalizer"
+            ],
+            "tokenizer": "izumo_tokenizer_single_language"
+          }
+        },
+        "tokenizer": {
+          "izumo_tokenizer_single_language": {
+            "perform_pos": "false",
+            "type": "izumo_tokenizer",
+            "language": "en"
+          },
+          "izumo_tokenizer_single_language_clustering": {
+            "perform_pos": "true",
+            "type": "izumo_tokenizer",
+            "language": "en"
+          }
+        }
+      },
+      "number_of_replicas": "1",
+      "languagecode": "en",
+      "number_of_shards": "1",
+      "routing_partition_size": "1"
+    }
+  }
+}

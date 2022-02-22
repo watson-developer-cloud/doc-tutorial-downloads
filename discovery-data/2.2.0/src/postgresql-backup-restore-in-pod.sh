@@ -60,20 +60,22 @@ if [ ${COMMAND} = 'restore' ] ; then
   mkdir -p ${TMP_WORK_DIR}
   cd ${TMP_WORK_DIR}
 
-  if ! psql -d dadmin -c "SELECT id FROM tenants" | grep "default" > /dev/null ; then
-    psql -d dadmin -c "UPDATE tenants SET id = 'default'"
-  fi
+  if "${REQUIRE_TENANT_BACKUP}" ; then 
+    if ! psql -d dadmin -c "SELECT id FROM tenants" | grep "default" > /dev/null ; then
+      psql -d dadmin -c "UPDATE tenants SET id = 'default'"
+    fi
 
-  psql -d dadmin -c "\COPY tenants TO '${TMP_WORK_DIR}/tenants'"
-  if ! cat "${TMP_WORK_DIR}/tenants" | grep "default" > /dev/null ; then
-    brlog "ERROR" "Can not get tenant information"
-    exit 1
-  fi
+    psql -d dadmin -c "\COPY tenants TO '${TMP_WORK_DIR}/tenants'"
+    if ! cat "${TMP_WORK_DIR}/tenants" | grep "default" > /dev/null ; then
+      brlog "ERROR" "Can not get tenant information"
+      exit 1
+    fi
 
-  while ls ${TMP_WORK_DIR}/tenants | grep "tenants" > /dev/null
-  do
-    sleep 10
-  done
+    while ls ${TMP_WORK_DIR}/tenants | grep "tenants" > /dev/null
+    do
+      sleep 10
+    done
+  fi
 
   brlog "INFO" "Extracting archive..."
   tar ${PG_ARCHIVE_OPTION} -xf ${PG_BACKUP}
@@ -81,9 +83,11 @@ if [ ${COMMAND} = 'restore' ] ; then
   brlog "INFO" "Restorering data..."
   for DATABASE in $(ls ${PG_BACKUP_DIR}/*.dump | cut -d "/" -f 2 | grep -v dfs | sed -e "s/^pg_//g" -e "s/.dump$//g")
   do
-    psql -d ${DATABASE} -c "REVOKE CONNECT ON DATABASE ${DATABASE} FROM public;"
-    psql -d ${DATABASE} -c "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-    dropdb --if-exists ${DATABASE}
+    if psql -lqt | cut -d \| -f 1 | grep -qw "${DATABASE}" ; then
+      psql -d ${DATABASE} -c "REVOKE CONNECT ON DATABASE ${DATABASE} FROM public;"
+      psql -d ${DATABASE} -c "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
+      dropdb --if-exists ${DATABASE}
+    fi
     createdb ${DATABASE}
     psql -d ${DATABASE} -c "GRANT CONNECT ON DATABASE ${DATABASE} TO public;"
     cat ${PG_BACKUP_PREFIX}${DATABASE}${PG_BACKUP_SUFFIX} | grep -v "OWNER TO dadmin" | grep -v "OWNER TO enterprisedb" | psql ${DATABASE}

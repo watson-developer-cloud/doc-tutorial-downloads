@@ -141,7 +141,8 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   brlog "INFO" "Waiting for ${COMMAND} job to be completed"
   while :
   do
-    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+    ls_tmp="$(fetch_cmd_result ${POD} 'ls /tmp')"
+    if echo "${ls_tmp}" | grep "backup-restore-complete" > /dev/null ; then
       brlog "INFO" "Completed ${COMMAND} job"
       break;
     else

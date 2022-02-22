@@ -117,7 +117,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     run_cmd_in_pod ${ETCD_POD} "rm -rf ${ETCD_BACKUP_DIR} && mkdir -p ${ETCD_BACKUP_DIR} && tar -C ${ETCD_BACKUP_DIR} ${ETCD_ARCHIVE_OPTION} -xf ${ETCD_BACKUP}" ${OC_ARGS}
   fi
   brlog "INFO" "Restoring data..."
-  run_cmd_in_pod ${ETCD_POD} 'export ETCDCTL_API=3 && \
+  cmd='export ETCDCTL_API=3 && \
   export ETCDCTL_USER='${ETCD_USER}':'${ETCD_PASSWORD}' && \
   export ETCDCTL_CERT=/etc/etcdtls/operator/etcd-tls/etcd-client.crt && \
   export ETCDCTL_CACERT=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt && \
@@ -125,8 +125,34 @@ if [ ${COMMAND} = 'restore' ] ; then
   export ETCDCTL_ENDPOINTS=https://'${ETCD_SERVICE}':2379 && \
   export ETCD_BACKUP='${ETCD_BACKUP_FILE}' && \
   etcdctl del --prefix "/" && \
-  cat ${ETCD_BACKUP} | grep -e "\"Key\" : " -e "\"Value\" :" | sed -e "s/^\"Key\" : \"\(.*\)\"$/\1\t/g" -e "s/^\"Value\" : \"\(.*\)\"$/\1\t/g" | awk '"'"'{ORS="";print}'"'"' | sed -e '"'"'s/\\\\n/\\n/g'"'"' -e "s/\\\\\"/\"/g" | sed -e "s/\\\\\\\\/\\\\/g" | while read -r -d $'"'\t'"' line1 ; read -r -d $'"'\t'"' line2; do etcdctl put "$line1" "$line2" ; done && \
+  cat ${ETCD_BACKUP} | \
+  grep -e "\"Key\" : " -e "\"Value\" :" | \
+  sed -e "s/^\"Key\" : \"\(.*\)\"$/\1\t/g" -e "s/^\"Value\" : \"\(.*\)\"$/\1\t/g" | \
+  awk '"'"'{ORS="";print}'"'"' | \
+  sed -e '"'"'s/\\\\n/\\n/g'"'"' -e "s/\\\\\"/\"/g" | \
+  sed -e "s/\\\\\\\\/\\\\/g" | '
+
+  if [ $(compare_version "$(get_version)" "4.0.6") -ge 0 ] && [ $(compare_version "$(get_backup_version)" "4.0.6") -ge 0 ] ; then
+    instance_tupples=$(get_instance_tuples)
+    for tuple in ${instance_tupples}
+    do
+      ORG_IFS=${IFS}
+      IFS=","
+      set -- ${tuple}
+      IFS=${ORG_IFS}
+      # source and destination tenant IDs
+      src=$1
+      dst=$2
+      if [ "${src}" = "${dst}" ] ; then
+        continue
+      fi
+      cmd+="sed -e 's/${src}/${dst}/g' | "
+    done
+  fi
+
+  cmd+='while read -r -d $'"'\t'"' line1 ; read -r -d $'"'\t'"' line2; do etcdctl put "$line1" "$line2" ; done && \
   rm -rf ${ETCD_BACKUP} '${ETCD_BACKUP_DIR} ${OC_ARGS}
+  run_cmd_in_pod ${ETCD_POD} "${cmd}"
   brlog "INFO" "Done"
   brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
