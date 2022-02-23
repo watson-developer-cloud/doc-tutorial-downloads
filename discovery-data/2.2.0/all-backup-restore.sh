@@ -3,7 +3,6 @@
 set -e
 
 BACKUP_DIR="tmp"
-BACKUP_VERSION_FILE="tmp/version.txt"
 TMP_WORK_DIR="tmp/all_backup"
 SPLITE_DIR=./tmp_split_bakcup
 EXTRA_OC_ARGS="${EXTRA_OC_ARGS:-}"
@@ -25,6 +24,7 @@ Usage:
 Options:
     --help, -h                                 Show help
     --file, -f                                 Speccify backup file
+    --mapping, -m                              Specify mapping file for restore to multi tenant clusters.
     --log-output-dir="<directory_path>"        Specify outout direcotry of detailed component logs
 
 Options (Advanced):
@@ -41,6 +41,8 @@ Basically, you don't need these advanced options.
     --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if fail to transfer data to MinIO.
     --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. It's size depends on ephemeral storage.
     --enable-multipart                         Enable multipart upload of MinIO client on kubernetes job.
+    --continue-from                            Resume backup or restore from specified component. Values: wddata, etcd, postgresql, elastic, minio, archive, migration, post-restore
+    --quiesce-on-error=[true|false]            If true, not unqueisce on error during backup or restore.
 EOF
 }
 
@@ -74,6 +76,22 @@ do
         exit 1
       fi
       BACKUP_FILE="$2"
+      shift 2
+      ;;
+    -m | --mapping)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export MAPPING_FILE="$2"
+      shift 2
+      ;;
+    -c | --continue-from)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      CONTINUE_FROM_COMPONENT="$2"
       shift 2
       ;;
     --log-output-dir)
@@ -172,6 +190,14 @@ do
       export JOB_PVC_NAME="${1#--pvc=}"
       shift 1
       ;;
+    --quiesce-on-error)
+      export QUIESCE_ON_ERROR=true
+      shift 1
+      ;;
+    --quiesce-on-error=*)
+      export QUIESCE_ON_ERROR="${1#--quiesce-on-error=}"
+      shift 1
+      ;;
     -- | -)
       shift 1
       param+=( "$@" )
@@ -224,7 +250,7 @@ export OC_ARGS="${EXTRA_OC_ARGS}"
 
 validate_version
 
-if [ -d "${BACKUP_DIR}" ] ; then
+if [ -z "${CONTINUE_FROM_COMPONENT+UNDEF}" ] && [ -d "${BACKUP_DIR}" ] ; then
   brlog "ERROR" "./${BACKUP_DIR} exists. Please remove it."
   exit 1
 fi
@@ -241,6 +267,7 @@ fi
 run () {
   for COMP in ${ALL_COMPONENT[@]}
   do
+    CURRENT_COMPONENT=${COMP}
     "${SCRIPT_DIR}"/${COMP}-backup-restore.sh ${COMMAND} ${TENANT_NAME} -f "${BACKUP_DIR}/${COMP}.backup"
   done
 }
@@ -268,9 +295,11 @@ fi
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 brlog "INFO" "Component log directory: ${BACKUP_RESTORE_LOG_DIR}"
 
-quiesce
 
 if [ ${COMMAND} = 'backup' ] ; then
+  if [ "${CONTINUE_FROM_COMPONENT:-}" != "archive" ] ; then
+    quiesce
+  fi
   if [  `compare_version "${WD_VERSION}" "2.1.3"` -ge 0 ] ; then
     ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
   else
@@ -279,7 +308,20 @@ if [ ${COMMAND} = 'backup' ] ; then
   export ALL_COMPONENT=${ALL_COMPONENT}
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_`date "+%Y%m%d_%H%M%S"`.backup"}
   mkdir -p "${BACKUP_DIR}"
+  if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
+    create_backup_instance_mappings
+  fi
+  if [ -n "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] ; then
+    for comp in ${ALL_COMPONENT[@]}
+    do
+      if [ "${comp}" = "${CONTINUE_FROM_COMPONENT}" ] ; then
+        break
+      fi
+      ALL_COMPONENT=("${ALL_COMPONENT[@]:1}")
+    done
+  fi
   run
+  CURRENT_COMPONENT="archive"
   rm -rf ${TMP_WORK_DIR}
   echo -n "${WD_VERSION}" > ${BACKUP_VERSION_FILE}
   brlog "INFO" "Archiving all backup files..."
@@ -301,20 +343,54 @@ if [ ${COMMAND} = 'backup' ] ; then
 fi
 
 if [ ${COMMAND} = 'restore' ] ; then
+  if [ -z "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] ; then
+    brlog "INFO" "Extract archive"
+    tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
+  fi
   if [ $(compare_version "${WD_VERSION}" "4.0.5") -le 0 ] && ! check_instance_exists ; then
     brlog "ERROR" "Please provision WatsonDiscovery instance on CP4D UI."
     exit 1
   fi
-  tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
   export BACKUP_FILE_VERSION=`get_backup_version`
+  if [ $(compare_version "${BACKUP_FILE_VERSION}" "4.0.6") -ge 0 ] ; then
+    if ! check_instance_mappings ; then
+      brlog "ERROR" "Incorrect instance mapping."
+      brlog "INFO" "You can restart ${COMMAND} with '--continue-form' option like:"
+      brlog "INFO" "./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from wddata"
+      exit 1
+    fi
+  fi
+  if [ "${CONTINUE_FROM_COMPONENT:-}" != "post-restore" ] ; then
+    quiesce
+  fi
   ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
+  if [ -n "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] ; then
+    for comp in ${ALL_COMPONENT[@]}
+    do
+      if [ "${comp}" = "${CONTINUE_FROM_COMPONENT}" ] ; then
+        break
+      fi
+      ALL_COMPONENT=("${ALL_COMPONENT[@]:1}")
+    done
+  fi
   export ALL_COMPONENT=${ALL_COMPONENT}
   run
+  CURRENT_COMPONENT=migration
+  if [ "${CONTINUE_FROM_COMPONENT:-}" != "post-restore" ] ; then
+    if require_st_mt_migration ; then
+      ${SCRIPT_DIR}/st-mt-migration.sh ${TENANT_NAME}
+    fi
+    if require_mt_mt_migration ; then
+      ${SCRIPT_DIR}/mt-mt-migration.sh -i ${TENANT_NAME}
+    fi
+  fi
 fi
+
 
 unquiesce
 
 if [ "$COMMAND" = "restore" ] ; then
+  CURRENT_COMPONENT="post-restore"
   ${SCRIPT_DIR}/post-restore.sh ${TENANT_NAME}
 fi
 

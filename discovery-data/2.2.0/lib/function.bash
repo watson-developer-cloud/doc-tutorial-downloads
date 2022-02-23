@@ -1,5 +1,6 @@
 export BACKUP_RESTORE_LOG_LEVEL="${BACKUP_RESTORE_LOG_LEVEL:-INFO}"
 export WD_CMD_COMPLETION_TOKEN="completed_wd_command"
+export BACKUP_VERSION_FILE="tmp/version.txt"
 export DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
 export BACKUP_RESTORE_LOG_DIR="${BACKUP_RESTORE_LOG_DIR:-wd-backup-restore-logs-`date "+%Y%m%d_%H%M%S"`}"
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
@@ -59,19 +60,23 @@ validate_version(){
 }
 
 get_version(){
-  if [ -n "`oc get wd ${OC_ARGS} ${TENANT_NAME}`" ] ; then
-    local version=`oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath='{.spec.version}'`
-    echo "${version%%-*}"
-  elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
-    if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
-      echo "2.1.3"
-    else
-      echo "2.1.4"
-    fi
-  elif [ -n "`oc get sts ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=gateway" -o jsonpath="{..image}" | grep "wd-management"`" ] ; then
-    echo "2.1.2"
+  if [ -n "${WD_VERSION:+UNDEF}" ] ; then
+    echo "${WD_VERSION}"
   else
-    echo "2.1"
+    if [ -n "`oc get wd ${OC_ARGS} ${TENANT_NAME}`" ] ; then
+      local version=`oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath='{.spec.version}'`
+      echo "${version%%-*}"
+    elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
+      if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
+        echo "2.1.3"
+      else
+        echo "2.1.4"
+      fi
+    elif [ -n "`oc get sts ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=gateway" -o jsonpath="{..image}" | grep "wd-management"`" ] ; then
+      echo "2.1.2"
+    else
+      echo "2.1"
+    fi
   fi
 }
 
@@ -100,10 +105,14 @@ compare_version(){
 }
 
 get_backup_version(){
-  if [ -e "${BACKUP_VERSION_FILE}" ] ; then
-    cat "${BACKUP_VERSION_FILE}"
+  if [ -n "${BACKUP_FILE_VERSION:+UNDEF}" ] ; then
+    echo "${BACKUP_FILE_VERSION}"
   else
-    echo "2.1" # 2.1.2 or earlier
+    if [ -e "${BACKUP_VERSION_FILE}" ] ; then
+      cat "${BACKUP_VERSION_FILE}"
+    else
+      echo "2.1" # 2.1.2 or earlier
+    fi
   fi
 }
 
@@ -408,15 +417,39 @@ wait_pod_ready(){
   done
 }
 
+show_quiesce_error_message(){
+  local message=$( cat << EOS
+Backup/Restore failed.
+You can restart ${COMMAND} with "--continue-form" option like:
+  ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
+You can unquiesce WatsonDiscovery by this command:
+  oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
+EOS
+)
+  brlog "ERROR" "${message}"
+}
+
 quiesce(){
   echo
   brlog "INFO" "Quiescing"
   echo
 
-  if [ "$COMMAND" = "restore" ] ; then
-    trap "brlog 'ERROR' 'Error occur while running scripts.' ; unquiesce; ./post-restore.sh ${TENANT_NAME}; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+  local quiesce_on_error=false
+
+  if [ "$COMMAND" = "backup" ] ; then
+    quiesce_on_error=${QUIESCE_ON_ERROR:-false}
   else
-    trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+    quiesce_on_error=${QUIESCE_ON_ERROR:-true}
+  fi
+
+  if "${quiesce_on_error}" ; then
+    trap "show_quiesce_error_message" 0 1 2 3 15
+  else
+    if [ "$COMMAND" = "restore" ] ; then
+      trap "brlog 'ERROR' 'Error occur while running scripts.' ; unquiesce; ./post-restore.sh ${TENANT_NAME}; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+    else
+      trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+    fi
   fi
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
 
@@ -450,6 +483,7 @@ MIGRATOR_TAGS=(
   ["4.0.3"]="12.0.10-7006@sha256:b4fd94eee9dade78a32dce828f0b640ae382cc300f746ad5af3c49cea276e43a"
   ["4.0.4"]="12.0.11-7050@sha256:de8f09a0396301b02fde2e15973dbfc7d923af5946ea1592a6c4fd6c859b8524"
   ["4.0.5"]="12.0.12-8043@sha256:ce430b4d5dc9487586f3d539e68de6378982862a6ecb26e319b74bb68f4a2785"
+  ["4.0.6"]="12.0.13-8054@sha256:d1fe1f70c88baedaaccba1974d8a5517073d83e0b5085c9b8dae1218bfc3b19f"
 )
 
 get_migrator_tag(){
@@ -475,6 +509,7 @@ PG_CONFIG_TAGS=(
   ["4.0.3"]="20211022-003507-1246-a9166aca@sha256:c177dc8aa05e0e072e8f786a7ebd144f84643c395952757d3af08636626914c2"
   ["4.0.4"]="20211212-155002-4-f1f28c77@sha256:bd53e3c80b2a572bf007eae1c144951c1dcda6315e972ffe2491f98994e919a4"
   ["4.0.5"]="20211221-172037-14-e854223f@sha256:de27642e2e8dc56073ebde40ba2277416ce345f3f132c8f6146329459d1a8732"
+  ["4.0.6"]="20220203-003508-1355-e9424fab@sha256:372df30becb14678016a6efc9c339084986e388dbba84316f2ea7fb60b916c4c"
 )
 
 get_pg_config_tag(){
@@ -628,6 +663,19 @@ EOF
   oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 }
 
+run_script_in_pod(){
+  local pod="$1"
+  shift
+  local script="$1"
+  shift
+  local options=( "$1" )
+  shift
+  local filename="$(basename "${script}")"
+  oc cp $@ "${script}" "${pod}:/tmp/${filename}"
+  run_cmd_in_pod ${pod} "/tmp/${filename} ${options[@]}" $@
+  oc exec $@ ${pod} -- bash -c "rm -f /tmp/${filename}}"
+}
+
 add_env_to_job_yaml(){
   local env_name=$1
   shift
@@ -704,6 +752,10 @@ run_pg_job(){
   PG_CONFIGMAP=`get_pg_configmap`
   PG_SECRET=`get_pg_secret`
   PG_PASSWORD_KEY="pg_su_password"
+  REQUIRE_TENANT_BACKUP="false"
+  if [ "${COMMAND}" = "restore" ] && require_tenant_backup ; then
+    REQUIRE_TENANT_BACKUP="true"
+  fi
   if [ `compare_version "${wd_version}" "4.0.0"` -lt 0 ] ; then
     PG_PASSWORD_KEY="STKEEPER_PG_SU_PASSWORD"
   fi
@@ -731,6 +783,7 @@ run_pg_job(){
   add_config_env_to_job_yaml "PGPORT" "${PG_CONFIGMAP}" "port" "${PG_JOB_FILE}"
   add_secret_env_to_job_yaml "PGPASSWORD" "${PG_SECRET}" "${PG_PASSWORD_KEY}" "${PG_JOB_FILE}"
   add_env_to_job_yaml "PG_ARCHIVE_OPTION" "${PG_ARCHIVE_OPTION}" "${PG_JOB_FILE}"
+  add_env_to_job_yaml "REQUIRE_TENANT_BACKUP" "${REQUIRE_TENANT_BACKUP}" "${PG_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${PG_JOB_FILE}"
   add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${PG_JOB_FILE}"
 
@@ -777,6 +830,35 @@ verify_args(){
   fi
 }
 
+get_quiesce_status(){
+  local tenant=$1
+  shift
+  quiesce_status=$(oc get $@ wd ${tenant} -o jsonpath='{.status.customResourceQuiesce}')
+  echo "${quiesce_status}"
+}
+
+require_st_mt_migration(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  local backup_version=${BACKUP_FILE_VERSION:-$(get_backup_version)}
+  local mt_version="4.0.6"
+  if [ $(compare_version "${backup_version}" "${mt_version}") -lt 0 ] && [ $(compare_version "${wd_version}" "${mt_version}") -ge 0 ] ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+require_mt_mt_migration(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  local backup_version=${BACKUP_FILE_VERSION:-$(get_backup_version)}
+  local mt_version="4.0.6"
+  if [ $(compare_version "${backup_version}" "${mt_version}") -ge 0 ] && [ $(compare_version "${wd_version}" "${mt_version}") -ge 0 ] ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 get_primary_pg_pod(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
@@ -789,6 +871,52 @@ get_primary_pg_pod(){
       fi
     done
   fi
+}
+
+launch_minio_pod(){
+  MINIO_BACKUP_RESTORE_SCRIPTS="run.sh"
+  MINIO_BACKUP_RESTORE_JOB="wd-discovery-minio-backup-restore"
+  MINIO_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
+  JOB_CPU_LIMITS="${MC_CPU_LIMITS:-800m}" # backward compatibility
+  JOB_CPU_LIMITS="${JOB_CPU_LIMITS:-800m}"
+  JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
+  JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  WD_MIGRATOR_IMAGE="`get_migrator_image`"
+  MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
+  DISCO_SVC_ACCOUNT=`get_service_account`
+  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  CURRENT_TZ=`date "+%z" | tr -d '0'`
+  if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
+    TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
+  else
+    TZ_OFFSET="UTC+`echo ${CURRENT_TZ} | tr -d '-'`"
+  fi
+
+  sed -e "s/#namespace#/${NAMESPACE}/g" \
+    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
+    -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
+    -e "s/#cpu-limit#/${JOB_CPU_LIMITS}/g" \
+    -e "s/#memory-limit#/${JOB_MEMORY_LIMITS}/g" \
+    -e "s|#command#|./${MINIO_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
+    -e "s/#job-name#/${MINIO_BACKUP_RESTORE_JOB}/g" \
+    -e "s/#tenant#/${TENANT_NAME}/g" \
+    "${MINIO_JOB_TEMPLATE}" > "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "MINIO_ENDPOINT_URL" "${MINIO_CONFIGMAP}" "endpoint" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_HOST" "${MINIO_CONFIGMAP}" "host" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_PORT" "${MINIO_CONFIGMAP}" "port" "${MINIO_JOB_FILE}"
+  add_config_env_to_job_yaml "S3_ELASTIC_BACKUP_BUCKET" "${MINIO_CONFIGMAP}" "bucketElasticBackup" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_ACCESS_KEY" "${MINIO_SECRET}" "accesskey" "${MINIO_JOB_FILE}"
+  add_secret_env_to_job_yaml "MINIO_SECRET_KEY" "${MINIO_SECRET}" "secretkey" "${MINIO_JOB_FILE}"
+  if [ -n "${MINIO_ARCHIVE_OPTION:+UNDEF}" ] ; then add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${MINIO_JOB_FILE}"; fi
+  if [ -n "${DISABLE_MC_MULTIPART:+UNDEF}" ] ; then add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${MINIO_JOB_FILE}"; fi
+  add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${MINIO_JOB_FILE}"
+  add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${MINIO_JOB_FILE}"
+
+  oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}" &> /dev/null || true
+  oc ${OC_ARGS} apply -f "${MINIO_JOB_FILE}"
+  get_job_pod "app.kubernetes.io/component=${MINIO_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
+  wait_job_running ${POD}
 }
 
 setup_minio_env(){
@@ -833,7 +961,7 @@ setup_etcd_env(){
   ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
 }
 
-setup_pg_connection_info(){
+setup_pg_env(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
     PGUSER="postgres"
@@ -847,8 +975,8 @@ setup_pg_connection_info(){
 
 check_postgres_available(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  setup_pg_connection_info
   PG_POD=$(get_primary_pg_pod)
+  setup_pg_env
   oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
   PGPASSWORD='"${PGPASSWORD}"' \
   PGHOST=${HOSTNAME} \
@@ -856,8 +984,12 @@ check_postgres_available(){
   return 0
 }
 
+get_elastic_pod(){
+  echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)"
+}
+
 check_elastic_available(){
-  ELASTIC_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True`
+  ELASTIC_POD=$(get_elastic_pod)
   oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
   curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | grep "\"status\":\"yellow\"\\|\"status\":\"green\"" > /dev/null' || return 1
   return 0
@@ -870,9 +1002,145 @@ check_minio_avairable(){
   return 0
 }
 
+setup_zen_core_service_connection(){
+  ZEN_CORE_SERVICE=$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].metadata.name}')
+  ZEN_CORE_PORT=$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].spec.ports[?(@.name=="zencoreapi-tls")].port}')
+  ZEN_CORE_API_ENDPOINT="https://${ZEN_CORE_SERVICE}:${ZEN_CORE_PORT}"
+  ZEN_CORE_UID="$(oc get ${OC_ARGS} watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.appConfigOverrides.cp4d.api.admin_uid}')"
+  ZEN_CORE_TOKEN="$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"
+  ZEN_INSTANCE_TYPE="discovery"
+  ZEN_PROVISION_STATUS="PROVISIONED"
+}
+
+create_backup_instance_mappings(){
+  brlog "INFO" "Creating instance mapping file"
+  local mapping_file="${MAPPING_FILE:-${BACKUP_DIR}/instance_mapping.json}"
+  setup_zen_core_service_connection
+  ELASTIC_POD=$(get_elastic_pod)
+  token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks ${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID} -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  mappings=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v2/serviceInstance' -H 'Authorization: Bearer ${token}' | jq -r '.requestObj[] | select(.ServiceInstanceType == \"discovery\" and .ProvisionStatus == \"PROVISIONED\") | { \"display_name\": .ServiceInstanceDisplayName, \"source_instance_id\": .CreateArguments.metadata.instanceId, \"dest_instance_id\": \"<new_instance_id>\"}' | jq -s '{\"instance_mappings\": .}'" -c elasticsearch)
+  echo "${mappings}" > ${mapping_file}
+  brlog "INFO" "Instance mapping file: ${mapping_file}"
+}
+
+create_restore_instance_mappings(){
+  local rc=0
+  local mapping='{ "instance_mappings" : []}'
+  setup_zen_core_service_connection
+  ELASTIC_POD=$(get_elastic_pod)
+  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID}&username=admin&display_name=admin' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local service_instances=$(oc exec ${OC_ARGS} -c elasticsearch ${ELASTIC_POD} -- bash -c "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances[] | select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id'")
+  if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
+    brlog "INFO" "Discovery instances exist. Check if they are same instance."
+    local src_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json" -c elasticsearch)
+    len1=( ${service_instances} )
+    len2=( ${src_instances} )
+    if [ ${#len1[@]} -ne ${#len2[@]} ] ; then
+      brlog "ERROR" "Different number of instances. Please create instance mapping, and specify it '--mapping' option"
+      return 1
+    fi
+    for instance in ${src_instances}
+    do
+      if echo "${service_instances}" | grep "${instance}" > /dev/null ; then
+        mapping=$(fetch_cmd_result ${ELASTIC_POD} "echo '${mapping}' | jq -r '.instance_mappings |= . + [{\"source_instance_id\": \"${instance}\", \"dest_instance_id\": \"${instance}\"}]'")
+      else
+        brlog "ERROR" "Instance ${instance} does not exist. Please create instance mapping, and specify it with '--mapping' option."
+        return 1
+      fi
+    done
+  else
+    brlog "INFO" "No Discovery instance exist. Create new one."
+    local namespace=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+    local request_file="${SCRIPT_DIR}/src/create_service_instance.json"
+    local template="${SCRIPT_DIR}/src/create_service_instance_template.json"
+    local src_instances=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json" -c elasticsearch) )
+    local display_names=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].display_name' /tmp/mapping.json" -c elasticsearch) )
+    for i in "${!src_instances[@]}"
+    do
+        rm -f "${request_file}"
+        sed -e "s/#namespace#/${namespace}/g" \
+          -e "s/#version#/$(get_version)/g" \
+          -e "s/#instance#/${TENANT_NAME}/g" \
+          -e "s/#display_name#/${display_names[$i]}/g" \
+          "${template}" > "${request_file}"
+        oc cp -c elasticsearch "${request_file}" "${ELASTIC_POD}:/tmp/request.json"
+        instance_id=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks -X POST '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r '.id'" -c elasticsearch)
+        if [ -z "${instance_id}" ] || [ "${instance_id}" = "null" ] ; then
+          brlog "ERROR" "Failed to create Discovery service instance for ${src_instances[$i]}"
+          return 1
+        else
+          brlog "INFO" "Created Disocvery service instance: ${instance_id}"
+          mapping=$(fetch_cmd_result ${ELASTIC_POD} "echo '${mapping}' | jq -r '.instance_mappings |= . + [{\"source_instance_id\": \"${src_instances[$i]}\", \"dest_instance_id\": \"${instance_id}\"}]'" -c elasticsearch)
+        fi
+    done
+  fi
+  export MAPPING_FILE="./instance_mapping-$(date "+%Y%m%d%H%M").json"
+  echo "${mapping}" > "${MAPPING_FILE}"
+  brlog "INFO" "Created instance mapping: ${MAPPING_FILE}"
+  brlog "INFO" "Please specify it with '--mapping' option when you retry restore like: ./all-backup-restore.sh restore -f ${BACKUP_FILE} --mapping ${MAPPING_FILE}"
+  export RETRY_ADDITIONAL_OPTION="--mapping ${MAPPING_FILE} ${RETRY_ADDITIONAL_OPTION:-}"
+  return 0
+}
+
+check_instance_mappings(){
+  brlog "INFO" "Check instance mapping"
+  if [ -z "${MAPPING_FILE:+UNDEF}" ] ; then
+    brlog "INFO" "Mapping file is not specified"
+    export MAPPING_FILE="${BACKUP_DIR}/instance_mapping.json"
+    create_restore_instance_mappings || return 1
+  fi
+  if [ ! -e "${MAPPING_FILE}" ] ; then
+    brlog "ERROR" "Instance mapping file not found."
+    return 1
+  fi
+  setup_zen_core_service_connection
+  ELASTIC_POD=$(get_elastic_pod)
+  file_name="$(basename "${MAPPING_FILE}")"
+  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID}&username=admin&display_name=admin' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances[] | select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id'" -c elasticsearch)
+  dest_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].dest_instance_id' /tmp/mapping.json" -c elasticsearch)
+  for instance in ${dest_instances}
+  do
+    if ! echo "${service_instances}" | grep "${instance}" > /dev/null ; then
+      brlog "ERROR" "Instance not found. Instance ID: ${instance}"
+      return 1
+    fi
+  done
+  return 0
+}
+
+get_instance_tuples(){
+  ELASTIC_POD=$(get_elastic_pod)
+  file_name="$(basename "${MAPPING_FILE}")"
+  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c elasticsearch) )
+  oc exec -c elasticsearch ${ELASTIC_POD} -- bash -c "rm -f /tmp/mapping.json"
+  for map in "${mappings[@]}"
+  do
+    ORG_IFS=${IFS}
+    IFS=","
+    set -- ${map}
+    IFS=${ORG_IFS}
+    src=( $(printf "%032d" "${1}" | fold -w4) )
+    dest=( $(printf "%032d" "${2}" | fold -w4) )
+    echo "${src[0]}${src[1]}-${src[2]}-${src[3]}-${src[4]}-${src[5]}${src[6]}${src[7]},${dest[0]}${dest[1]}-${dest[2]}-${dest[3]}-${dest[4]}-${dest[5]}${dest[6]}${dest[7]}"
+  done
+}
+
+require_tenant_backup(){
+  local wd_version=${WD_VERSION:-$(get_backup_version)}
+  local backup_file_version=${BACKUP_FILE_VERSION:-$(get_backup_version)}
+  if [ $(compare_version ${backup_file_version} "2.1.3") -le 0 ] && [ $(compare_version "${wd_version}" "4.0.5") -le 0 ] ; then
+    return 0
+  fi
+  return 1
+}
+
 check_instance_exists(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  setup_pg_connection_info
+  setup_pg_env
   PG_POD=$(get_primary_pg_pod)
   oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
   PGPASSWORD='"${PGPASSWORD}"' \

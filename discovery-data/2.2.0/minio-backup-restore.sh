@@ -64,57 +64,10 @@ mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 
 if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
-  MINIO_BACKUP_RESTORE_SCRIPTS="minio-backup-restore-in-pod.sh"
-  MINIO_BACKUP_RESTORE_JOB="wd-discovery-minio-backup-restore"
-  MINIO_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
-  JOB_CPU_LIMITS="${MC_CPU_LIMITS:-800m}" # backward compatibility
-  JOB_CPU_LIMITS="${JOB_CPU_LIMITS:-800m}"
-  JOB_MEMORY_LIMITS="${MC_MEMORY_LIMITS:-2Gi}" # backward compatibility
-  JOB_MEMORY_LIMITS="${JOB_MEMORY_LIMITS:-2Gi}"
-  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-  WD_MIGRATOR_IMAGE="`get_migrator_image`"
-  ELASTIC_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=elastic-cxn -o jsonpath="{.items[0].metadata.name}"`
-  ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
-  MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
-  DISCO_SVC_ACCOUNT=`get_service_account`
-  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-  CURRENT_TZ=`date "+%z" | tr -d '0'`
-  if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
-    TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
-  else
-    TZ_OFFSET="UTC+`echo ${CURRENT_TZ} | tr -d '-'`"
-  fi
-
-  sed -e "s/#namespace#/${NAMESPACE}/g" \
-    -e "s/#svc-account#/${DISCO_SVC_ACCOUNT}/g" \
-    -e "s|#image#|${WD_MIGRATOR_IMAGE}|g" \
-    -e "s/#cpu-limit#/${JOB_CPU_LIMITS}/g" \
-    -e "s/#memory-limit#/${JOB_MEMORY_LIMITS}/g" \
-    -e "s|#command#|./${MINIO_BACKUP_RESTORE_SCRIPTS} ${COMMAND}|g" \
-    -e "s/#job-name#/${MINIO_BACKUP_RESTORE_JOB}/g" \
-    -e "s/#tenant#/${TENANT_NAME}/g" \
-    "${MINIO_JOB_TEMPLATE}" > "${MINIO_JOB_FILE}"
-  add_config_env_to_job_yaml "ELASTIC_ENDPOINT" "${ELASTIC_CONFIGMAP}" "endpoint" "${MINIO_JOB_FILE}"
-  add_secret_env_to_job_yaml "ELASTIC_USER" "${ELASTIC_SECRET}" "username" "${MINIO_JOB_FILE}"
-  add_secret_env_to_job_yaml "ELASTIC_PASSWORD" "${ELASTIC_SECRET}" "password" "${MINIO_JOB_FILE}"
-  add_config_env_to_job_yaml "MINIO_ENDPOINT_URL" "${MINIO_CONFIGMAP}" "endpoint" "${MINIO_JOB_FILE}"
-  add_config_env_to_job_yaml "S3_HOST" "${MINIO_CONFIGMAP}" "host" "${MINIO_JOB_FILE}"
-  add_config_env_to_job_yaml "S3_PORT" "${MINIO_CONFIGMAP}" "port" "${MINIO_JOB_FILE}"
-  add_config_env_to_job_yaml "S3_ELASTIC_BACKUP_BUCKET" "${MINIO_CONFIGMAP}" "bucketElasticBackup" "${MINIO_JOB_FILE}"
-  add_secret_env_to_job_yaml "MINIO_ACCESS_KEY" "${MINIO_SECRET}" "accesskey" "${MINIO_JOB_FILE}"
-  add_secret_env_to_job_yaml "MINIO_SECRET_KEY" "${MINIO_SECRET}" "secretkey" "${MINIO_JOB_FILE}"
-  add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${MINIO_JOB_FILE}"
-  add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${MINIO_JOB_FILE}"
-  add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${MINIO_JOB_FILE}"
-  add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${MINIO_JOB_FILE}"
-
-  oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}" &> /dev/null || true
-  oc ${OC_ARGS} apply -f "${MINIO_JOB_FILE}"
-  get_job_pod "app.kubernetes.io/component=${MINIO_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
-  wait_job_running ${POD}
+  launch_minio_pod
   oc ${OC_ARGS} cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
   oc ${OC_ARGS} cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${MINIO_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/minio-backup-restore-in-pod.sh" "${POD}:${BACKUP_RESTORE_DIR_IN_POD}/run.sh"
 
   if [ ${COMMAND} == "restore" ] ; then
     brlog "INFO" "Transferring backup data"
@@ -124,7 +77,8 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   brlog "INFO" "Waiting for ${COMMAND} job to be completed..."
   while :
   do
-    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+    ls_tmp="$(fetch_cmd_result ${POD} 'ls /tmp')"
+    if echo "${ls_tmp}" | grep "backup-restore-complete" > /dev/null ; then
       brlog "INFO" "Completed ${COMMAND} job"
       break;
     else
