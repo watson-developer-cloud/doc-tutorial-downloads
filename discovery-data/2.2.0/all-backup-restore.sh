@@ -24,8 +24,13 @@ Usage:
 Options:
     --help, -h                                 Show help
     --file, -f                                 Speccify backup file
-    --mapping, -m                              Specify mapping file for restore to multi tenant clusters.
-    --log-output-dir="<directory_path>"        Specify outout direcotry of detailed component logs
+    --mapping, -m <mapping_file>               Specify mapping file for restore to multi tenant clusters
+    --instance-name, -i <instance_name>        Instance name for a new Discovery instance. This name will be used if there is no Discovery instance when restore backup of Discovery 4.0.5 or older
+    --cp4d-user-id <user_id>                   User ID to create Discovery instance. Default: admin user ID.
+    --cp4d-user-name <user_name>               User name to create Discovery instance. Default: admin.
+    --log-output-dir <directory_path>          Specify outout direcotry of detailed component logs
+    --continue-from <component_name>           Resume backup or restore from specified component. Values: wddata, etcd, postgresql, elastic, minio, archive, migration, post-restore
+    --quiesce-on-error=[true|false]            If true, not unqueisce on error during backup or restore. Default false on backup, true on restore.
 
 Options (Advanced):
 Basically, you don't need these advanced options.
@@ -39,10 +44,8 @@ Basically, you don't need these advanced options.
     --skip-verify-backup                       Skip verifying the backup file.
     --skip-verify-datastore-archive            Skip verifying the archive of datastores.
     --use-job                                  Use kubernetes job for backup/restore of ElasticSearch or MinIO. Use this flag if fail to transfer data to MinIO.
-    --pvc="<pvc_name>"                         PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. It's size depends on ephemeral storage.
+    --pvc <pvc_name>                           PVC name used on job for backup/restore of ElasticSearch or MinIO. The size of PVC should be 2.5 ~ 3 times as large as a backup file of ElasticSearch or MinIO. If not defined, use emptyDir. It's size depends on ephemeral storage.
     --enable-multipart                         Enable multipart upload of MinIO client on kubernetes job.
-    --continue-from                            Resume backup or restore from specified component. Values: wddata, etcd, postgresql, elastic, minio, archive, migration, post-restore
-    --quiesce-on-error=[true|false]            If true, not unqueisce on error during backup or restore.
 EOF
 }
 
@@ -94,6 +97,14 @@ do
       CONTINUE_FROM_COMPONENT="$2"
       shift 2
       ;;
+    -i | --instance-name)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      INSTANCE_NAME="$2"
+      shift 2
+      ;;
     --log-output-dir)
       if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
         brlog "ERROR" "option requires an argument: $1"
@@ -104,6 +115,30 @@ do
       ;;
     --log-output-dir=*)
       export BACKUP_RESTORE_LOG_DIR="${1#--log-output-dir=}"
+      shift 1
+      ;;
+    --cp4d-user-id)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export ZEN_UID="$2"
+      shift 2
+      ;;
+    --cp4d-user-id=*)
+      export ZEN_UID="${1#--cp4d-user-id=}"
+      shift 1
+      ;;
+    --cp4d-user-name)
+      if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+        brlog "ERROR" "option requires an argument: $1"
+        exit 1
+      fi
+      export ZEN_USER_NAME="$2"
+      shift 2
+      ;;
+    --cp4d-user-name=*)
+      export ZEN_USER_NAME="${1#--cp4d-user-name=}"
       shift 1
       ;;
     --archive-on-local)
@@ -213,6 +248,7 @@ do
           COMMAND=$1
         else
           brlog "ERROR" "illegal argument: $1"
+          exit 1
         fi
         shift 1
       fi
@@ -347,10 +383,6 @@ if [ ${COMMAND} = 'restore' ] ; then
     brlog "INFO" "Extract archive"
     tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
   fi
-  if [ $(compare_version "${WD_VERSION}" "4.0.5") -le 0 ] && ! check_instance_exists ; then
-    brlog "ERROR" "Please provision WatsonDiscovery instance on CP4D UI."
-    exit 1
-  fi
   export BACKUP_FILE_VERSION=`get_backup_version`
   if [ $(compare_version "${BACKUP_FILE_VERSION}" "4.0.6") -ge 0 ] ; then
     if ! check_instance_mappings ; then
@@ -358,6 +390,25 @@ if [ ${COMMAND} = 'restore' ] ; then
       brlog "INFO" "You can restart ${COMMAND} with '--continue-form' option like:"
       brlog "INFO" "./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from wddata"
       exit 1
+    fi
+  else
+    if ! check_instance_exists ; then
+      brlog "INFO" "Watson Discovery instance does not exist"
+      if [ -z "${INSTANCE_NAME+NONDEF}" ] ; then
+        brlog "ERROR" "Undefined Discovery instance name. Please use --instance-name option or provision Discovery instance on CP4D UI"
+        brlog "INFO" "You can restart ${COMMAND} with adding '--continue-from' option:"
+        brlog "INFO" "ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from wddata"
+        exit 1
+      fi
+      instance_id=$(create_service_instance "${INSTANCE_NAME}")
+      if [ -n "${instance_id}" ] ; then
+        brlog "INFO" "Created Discovery service instance. Name: ${INSTANCE_NAME}, ID: ${instance_id}"
+      else
+        brlog "ERROR" "Failed to create Discovery service instance"
+        brlog "INFO" "You can restart ${COMMAND} with adding '--continue-from' option like:"
+        brlog "INFO" "ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from wddata"
+        exit 1
+      fi
     fi
   fi
   if [ "${CONTINUE_FROM_COMPONENT:-}" != "post-restore" ] ; then

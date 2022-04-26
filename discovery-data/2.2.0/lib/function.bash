@@ -420,8 +420,8 @@ wait_pod_ready(){
 show_quiesce_error_message(){
   local message=$( cat << EOS
 Backup/Restore failed.
-You can restart ${COMMAND} with "--continue-form" option like:
-  ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
+You can restart ${COMMAND} with adding "--continue-form" option:
+  ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
 You can unquiesce WatsonDiscovery by this command:
   oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
 EOS
@@ -485,6 +485,7 @@ MIGRATOR_TAGS=(
   ["4.0.5"]="12.0.12-8043@sha256:ce430b4d5dc9487586f3d539e68de6378982862a6ecb26e319b74bb68f4a2785"
   ["4.0.6"]="12.0.13-8054@sha256:d1fe1f70c88baedaaccba1974d8a5517073d83e0b5085c9b8dae1218bfc3b19f"
   ["4.0.7"]="12.0.14-8035@sha256:cb192a11959644e2b127ad41645063db53cdef8cc6e9ffed4b759b975a048008"
+  ["4.0.8"]="12.0.15-9069@sha256:82a0f396ca18e217c79dd006e10836bf8092e28f76bb18ba38a2fed83db9f26b"
 )
 
 get_migrator_tag(){
@@ -512,6 +513,7 @@ PG_CONFIG_TAGS=(
   ["4.0.5"]="20211221-172037-14-e854223f@sha256:de27642e2e8dc56073ebde40ba2277416ce345f3f132c8f6146329459d1a8732"
   ["4.0.6"]="20220203-003508-1355-e9424fab@sha256:372df30becb14678016a6efc9c339084986e388dbba84316f2ea7fb60b916c4c"
   ["4.0.7"]="20220304-150142-11-eb251f4d@sha256:0743350fbdadcaae1c0440f630ed23b1b5fa9d5608782d40da54bfa7ac772f36"
+  ["4.0.8"]="20220404-180919-16-03066e2f@sha256:9ebbeedca00aac2aea721d54d078d947f9ac8850aa38208452cf6dc0a2a620df"
 )
 
 get_pg_config_tag(){
@@ -958,9 +960,11 @@ setup_etcd_env(){
     # Etcd label changed on 4.0.4
     ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,etcd_cluster=${TENANT_NAME}-discovery-etcd" | tr '[[:space:]]' '\n' | grep etcd-client)
   fi
+  ETCD_ENDPOINT="https://${ETCD_SERVICE}:2379"
   ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root)
   ETCD_USER=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode)
   ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
+  ETCD_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)
 }
 
 setup_pg_env(){
@@ -973,11 +977,11 @@ setup_pg_env(){
     PGUSER='${STKEEPER_PG_SU_USERNAME}'
     PGPASSWORD='${STKEEPER_PG_SU_PASSWORD}'
   fi
+  PG_POD=$(get_primary_pg_pod)
 }
 
 check_postgres_available(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  PG_POD=$(get_primary_pg_pod)
   setup_pg_env
   oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
   PGPASSWORD='"${PGPASSWORD}"' \
@@ -1005,13 +1009,16 @@ check_minio_avairable(){
 }
 
 setup_zen_core_service_connection(){
-  ZEN_CORE_SERVICE=$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].metadata.name}')
-  ZEN_CORE_PORT=$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].spec.ports[?(@.name=="zencoreapi-tls")].port}')
+  ZEN_CORE_SERVICE=${ZEN_CORE_SERVICE:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].metadata.name}')}
+  ZEN_CORE_PORT=${ZEN_CORE_PORT:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].spec.ports[?(@.name=="zencoreapi-tls")].port}')}
   ZEN_CORE_API_ENDPOINT="https://${ZEN_CORE_SERVICE}:${ZEN_CORE_PORT}"
-  ZEN_CORE_UID="$(oc get ${OC_ARGS} watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.appConfigOverrides.cp4d.api.admin_uid}')"
-  ZEN_CORE_TOKEN="$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"
+  ZEN_CORE_UID=${ZEN_CORE_UID:-"$(oc get ${OC_ARGS} watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.appConfigOverrides.cp4d.api.admin_uid}')"}
+  ZEN_CORE_TOKEN=${ZEN_CORE_TOKEN:-"$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"}
   ZEN_INSTANCE_TYPE="discovery"
   ZEN_PROVISION_STATUS="PROVISIONED"
+  WATSON_GATEWAY_SERVICE=${WATSON_GATEWAY_SERVICE:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].metadata.name}')"}
+  WATSON_GATEWAY_PORT=${WATSON_GATEWAY_PORT:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].spec.ports[?(@.name=="https")].port}')"}
+  WATSON_GATEWAY_ENDPOINT="https://${WATSON_GATEWAY_SERVICE}:${WATSON_GATEWAY_PORT}"
 }
 
 create_backup_instance_mappings(){
@@ -1031,8 +1038,8 @@ create_restore_instance_mappings(){
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
   oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
-  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID}&username=admin&display_name=admin' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  local service_instances=$(oc exec ${OC_ARGS} -c elasticsearch ${ELASTIC_POD} -- bash -c "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances[] | select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id'")
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     brlog "INFO" "Discovery instances exist. Check if they are same instance."
     local src_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json" -c elasticsearch)
@@ -1053,22 +1060,12 @@ create_restore_instance_mappings(){
     done
   else
     brlog "INFO" "No Discovery instance exist. Create new one."
-    local namespace=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
-    local request_file="${SCRIPT_DIR}/src/create_service_instance.json"
-    local template="${SCRIPT_DIR}/src/create_service_instance_template.json"
     local src_instances=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json" -c elasticsearch) )
     local display_names=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].display_name' /tmp/mapping.json" -c elasticsearch) )
     for i in "${!src_instances[@]}"
     do
-        rm -f "${request_file}"
-        sed -e "s/#namespace#/${namespace}/g" \
-          -e "s/#version#/$(get_version)/g" \
-          -e "s/#instance#/${TENANT_NAME}/g" \
-          -e "s/#display_name#/${display_names[$i]}/g" \
-          "${template}" > "${request_file}"
-        oc cp -c elasticsearch "${request_file}" "${ELASTIC_POD}:/tmp/request.json"
-        instance_id=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks -X POST '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r '.id'" -c elasticsearch)
-        if [ -z "${instance_id}" ] || [ "${instance_id}" = "null" ] ; then
+        instance_id=$(create_service_instance "${display_names[$i]}")
+        if [ -z "${instance_id}" ] ; then
           brlog "ERROR" "Failed to create Discovery service instance for ${src_instances[$i]}"
           return 1
         else
@@ -1098,11 +1095,11 @@ check_instance_mappings(){
   fi
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
-  file_name="$(basename "${MAPPING_FILE}")"
+  local file_name="$(basename "${MAPPING_FILE}")"
   oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
-  token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID}&username=admin&display_name=admin' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances[] | select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id'" -c elasticsearch)
-  dest_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].dest_instance_id' /tmp/mapping.json" -c elasticsearch)
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
+  local dest_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].dest_instance_id' /tmp/mapping.json" -c elasticsearch)
   for instance in ${dest_instances}
   do
     if ! echo "${service_instances}" | grep "${instance}" > /dev/null ; then
@@ -1115,9 +1112,9 @@ check_instance_mappings(){
 
 get_instance_tuples(){
   ELASTIC_POD=$(get_elastic_pod)
-  file_name="$(basename "${MAPPING_FILE}")"
+  local file_name="$(basename "${MAPPING_FILE}")"
   oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
-  mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c elasticsearch) )
+  local mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c elasticsearch) )
   oc exec -c elasticsearch ${ELASTIC_POD} -- bash -c "rm -f /tmp/mapping.json"
   for map in "${mappings[@]}"
   do
@@ -1141,12 +1138,44 @@ require_tenant_backup(){
 }
 
 check_instance_exists(){
-  local wd_version=${WD_VERSION:-$(get_version)}
-  setup_pg_env
-  PG_POD=$(get_primary_pg_pod)
-  oc exec ${OC_ARGS} ${PG_POD} -- bash -c 'PGUSER='"${PGUSER}"' \
-  PGPASSWORD='"${PGPASSWORD}"' \
-  PGHOST=${HOSTNAME} \
-  psql -d dadmin -t -c "SELECT * from tenants;" | grep "default" > /dev/null' || return 1
-  return 0
+  setup_zen_core_service_connection
+  ELASTIC_POD=${ELASTIC_POD:-$(get_elastic_pod)}
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
+  if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+create_service_instance(){
+  setup_zen_core_service_connection
+  ELASTIC_POD=${ELASTIC_POD:-$(get_elastic_pod)}
+  local display_name=$1
+  local namespace=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
+  local request_file="${SCRIPT_DIR}/src/create_service_instance.json"
+  local template="${SCRIPT_DIR}/src/create_service_instance_template.json"
+  rm -f "${request_file}"
+  sed -e "s/#namespace#/${namespace}/g" \
+    -e "s/#version#/$(get_version)/g" \
+    -e "s/#instance#/${TENANT_NAME}/g" \
+    -e "s/#display_name#/${display_name}/g" \
+    "${template}" > "${request_file}"
+  oc cp -c elasticsearch "${request_file}" "${ELASTIC_POD}:/tmp/request.json"
+  if [ -z "${ZEN_USER_NAME+UNDEF}" ] ; then
+    brlog "WARN" "'--cp4d-user-name' option is not provided. Use 'admin' as a user to create Discovery instance" >&2
+    ZEN_USER_NAME="admin"
+    ZEN_UID=${ZEN_CORE_UID}
+  fi
+  if [ -z "${ZEN_UID+UNDEF}" ] ; then
+    brlog "WARN" "'--cp4d-user-id' option is not provided. Use 'admin' as a user to create Discovery instance" >&2
+    ZEN_USER_NAME="admin"
+    ZEN_UID=${ZEN_CORE_UID}
+  fi
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_UID}&username=${ZEN_USER_NAME}&display_name=${ZEN_USER_NAME}' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local instance_id=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks -X POST '${WATSON_GATEWAY_ENDPOINT}/api/ibmcloud/resource-controller/resource_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r 'if .zen_id == null or .zen_id == \"\" then \"null\" else .zen_id end'" -c elasticsearch)
+  if [ "${instance_id}" != "null" ] ; then
+    echo "${instance_id}"
+  fi
 }
