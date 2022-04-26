@@ -1,23 +1,8 @@
 {
-  "addon_type": "discovery",
-  "addon_version": "#version#",
-  "create_arguments": {
-    "deployment_id": "#namespace#-#instance#",
-    "description": "",
-    "metadata": {},
-    "parameters": {
-      "serviceId": "discovery",
-      "url": "https://wd-discovery-gateway.zen.svc.cluster.local:60443/v2/service_instances",
-      "watson": true
-    },
-    "resources": {
-      "cpu": "-",
-      "gpu": "-",
-      "memory": "-"
-    }
-  },
-  "display_name": "#display_name#",
-  "namespace": "#namespace#",
-  "pre_existing_owner": false,
-  "transient_fields": {}
+  "name": "#display_name#",
+  "deployment_id": "#namespace#-#instance#",
+  "url": "https://#instance#-discovery-gateway.#namespace#.svc.cluster.local:60443/v2/service_instances",
+  "description": "",
+  "type": "discovery",
+  "version": "#version#"
 }

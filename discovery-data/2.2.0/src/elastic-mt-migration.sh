@@ -87,9 +87,16 @@ if echo "${indices}" | grep "${source_index}" > /dev/null ; then
   curl "${ELASTIC_OPTIONS[@]}" -X PUT  "${ELASTIC_ENDPOINT}/${source_index}/_settings" -d"${json_disable_read_write}"
   curl "${ELASTIC_OPTIONS[@]}" -X POST "${ELASTIC_ENDPOINT}/${source_index}/_clone/${target_index}" -d"${json_clone_settings}"
 
+  MAX_RETRY_COUNT=5
+  local retry_count=0
   while :
   do
     curl "${ELASTIC_OPTIONS[@]}" "${ELASTIC_ENDPOINT}/_cluster/health/${target_index}?wait_for_status=green&timeout=30s" | grep -e "yellow" -e "green" && break
+    ((retry_count))
+    if [ ${retry_count} -ge ${MAX_RETRY_COUNT} ] ; then
+      curl "${ELASTIC_OPTIONS[@]}" -X POST "${ELASTIC_ENDPOINT}/_cluster/reroute?retry_failed=true"
+      retry_count=0
+    fi
   done
 
   curl "${ELASTIC_OPTIONS[@]}"  -X DELETE "${ELASTIC_ENDPOINT}/${source_index}"

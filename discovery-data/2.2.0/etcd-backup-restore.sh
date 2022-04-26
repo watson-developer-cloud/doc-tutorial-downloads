@@ -57,7 +57,6 @@ setup_etcd_env
 
 # backup etcd
 if [ ${COMMAND} = 'backup' ] ; then
-  ETCD_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd`
   BACKUP_FILE=${BACKUP_FILE:-"etcd_snapshot_`date "+%Y%m%d_%H%M%S"`.db"}
   brlog "INFO" "Start backup etcd..."
   run_cmd_in_pod ${ETCD_POD} "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP} && \
@@ -101,7 +100,6 @@ if [ ${COMMAND} = 'restore' ] ; then
     echo
     exit 1
   fi
-  ETCD_POD=`oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd`
   brlog "INFO" "Start restore etcd: ${BACKUP_FILE}"
 
   if "${ARCHIVE_ON_LOCAL}" ; then
