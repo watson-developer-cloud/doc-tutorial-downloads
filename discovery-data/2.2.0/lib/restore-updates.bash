@@ -15,7 +15,7 @@ elastic_updates(){
     if ls "$UPDATE_DIR"/*.elupdate_script &> /dev/null ; then
       for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate_script; do
         UPDATE_SCRIPT_NAME=$(basename ${ELASTIC_COMMAND})
-        oc ${OC_ARGS} cp ${ELASTIC_COMMAND} ${ELASTIC_POD}:/tmp/${UPDATE_SCRIPT_NAME}
+        _oc_cp ${ELASTIC_COMMAND} ${ELASTIC_POD}:/tmp/${UPDATE_SCRIPT_NAME} ${OC_ARGS}
         oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash /tmp/${UPDATE_SCRIPT_NAME}
         oc ${OC_ARGS} exec ${ELASTIC_POD} -c elsaticsearch -- rm /tmp/${UPDATE_SCRIPT_NAME}
       done

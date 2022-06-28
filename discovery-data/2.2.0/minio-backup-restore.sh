@@ -65,9 +65,9 @@ mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
   launch_minio_pod
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/minio-backup-restore-in-pod.sh" "${POD}:${BACKUP_RESTORE_DIR_IN_POD}/run.sh"
+  _oc_cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/src/minio-backup-restore-in-pod.sh" "${POD}:${BACKUP_RESTORE_DIR_IN_POD}/run.sh" ${OC_ARGS}
 
   if [ ${COMMAND} == "restore" ] ; then
     brlog "INFO" "Transferring backup data"

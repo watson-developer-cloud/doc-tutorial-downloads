@@ -129,9 +129,9 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   oc ${OC_ARGS} apply -f "${ELASTIC_JOB_FILE}"
   get_job_pod "app.kubernetes.io/component=${ELASTIC_BACKUP_RESTORE_JOB},tenant=${TENANT_NAME}"
   wait_job_running ${POD}
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc ${OC_ARGS} cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  _oc_cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/src/${ELASTIC_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
 
   if [ "${COMMAND}" = "restore" ] ; then
     brlog "INFO" "Transferring backup data"

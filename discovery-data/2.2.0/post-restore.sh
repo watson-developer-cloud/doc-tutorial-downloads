@@ -10,7 +10,7 @@ printUsage() {
 runPythonScripts() {
   POD=$1
   SCRIPT=$2
-  oc ${OC_ARGS} cp "src/${SCRIPT}" ${POD}:/tmp/
+  _oc_cp "src/${SCRIPT}" ${POD}:/tmp/ ${OC_ARGS}
   oc ${OC_ARGS} exec ${POD} -- bash -c "export MANAGEMENT_PORT=${MANAGEMENT_PORT} && \
   export ZING_PORT=${ZING_PORT} && \
   python3 /tmp/${SCRIPT}"
