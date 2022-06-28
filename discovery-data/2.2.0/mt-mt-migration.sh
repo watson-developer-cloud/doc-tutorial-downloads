@@ -246,7 +246,7 @@ do
   ##############
 
   brlog "INFO" "    Migrating ElasticSearch index"
-  oc cp ${OC_ARGS} -c elasticsearch "${SCRIPT_DIR}/src/tenant_index_template.json" "${ELASTIC_POD}:/tmp/tenant_index_template.json"
+  _oc_cp "${SCRIPT_DIR}/src/tenant_index_template.json" "${ELASTIC_POD}:/tmp/tenant_index_template.json" ${OC_ARGS} -c elasticsearch
   run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/src/elastic-mt-migration.sh" "-s ${src} -t ${dst} --template /tmp/tenant_index_template.json" -c elasticsearch
 
 done

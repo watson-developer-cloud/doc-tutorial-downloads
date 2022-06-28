@@ -87,9 +87,9 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
 
   run_pg_job
 
-  oc cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
-  oc cp "${SCRIPT_DIR}/src/${PG_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  _oc_cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  _oc_cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
+  _oc_cp "${SCRIPT_DIR}/src/${PG_BACKUP_RESTORE_SCRIPTS}" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/
 
   if [ "${COMMAND}" = "restore" ] ; then
     kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${PG_BACKUP}" ${OC_ARGS}

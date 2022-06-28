@@ -28,6 +28,30 @@ brlog(){
   fi
 }
 
+_oc_cp(){
+  local src=$1
+  local dst=$2
+  shift 2
+  local max_retry_count=${MAX_CP_RETRY_COUNT:-5}
+  local retry_count=1
+  local oc_cp_arg=""
+  if oc cp -h | grep -e "--retries=" > /dev/null ; then
+    oc_cp_arg="--retries=${OC_CP_RETRIES:-50}"
+  fi
+  while true;
+  do
+    oc cp ${oc_cp_arg} $@ "$src" "$dst" && break
+    if [ ${retry_count} -le ${max_retry_count} ] ; then
+      brlog "WARN" "Failed to copy file. Retry count: ${retry_count}" >&2
+      retry_count=$((retry_count += 1))
+    else
+      brlog "ERROR" "Failed to copy ${src} to ${dst}" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 set_scripts_version(){
   if [ -n "${SCRIPT_VERSION+UNDEF}" ] ; then
     return
@@ -207,12 +231,12 @@ kube_cp_from_local(){
     split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
     for splitfile in ${SPLITE_DIR}/*; do
       FILE_BASE_NAME=$(basename "${splitfile}")
-      oc cp $@ "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}"
+      _oc_cp "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}" $@
     done
     rm -rf ${SPLITE_DIR}
     run_cmd_in_pod ${POD} "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*" $@
   else
-    oc cp $@ "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}"
+    _oc_cp "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}" $@
   fi
 }
 
@@ -264,13 +288,13 @@ kube_cp_to_local(){
     FILE_LIST=`oc exec $@ ${POD} -- sh -c "ls ${POD_BACKUP}.split.*"`
     for splitfile in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${splitfile}")
-      oc cp $@ "${POD}:${splitfile}" "${SPLITE_DIR}/${FILE_BASE_NAME}"
+      _oc_cp "${POD}:${splitfile}" "${SPLITE_DIR}/${FILE_BASE_NAME}" $@
     done
     cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
     rm -rf ${SPLITE_DIR}
     oc exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
   else
-    oc cp $@ "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}"
+    _oc_cp "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}" $@
   fi
 }
 
@@ -324,7 +348,7 @@ get_mc(){
     launch_migrator_job
     get_job_pod "app.kubernetes.io/component=wd-migrator"
     wait_job_running ${POD}
-    oc cp ${OC_ARGS} ${POD}:/usr/local/bin/mc ${DIST_DIR}/mc
+    _oc_cp ${POD}:/usr/local/bin/mc ${DIST_DIR}/mc ${OC_ARGS}
     oc ${OC_ARGS} delete job ${MIGRATOR_JOB_NAME}
     chmod +x ${DIST_DIR}/mc
     brlog "INFO" "Got mc command: ${DIST_DIR}/mc"
@@ -487,6 +511,7 @@ MIGRATOR_TAGS=(
   ["4.0.7"]="12.0.14-8035@sha256:cb192a11959644e2b127ad41645063db53cdef8cc6e9ffed4b759b975a048008"
   ["4.0.8"]="12.0.15-9069@sha256:82a0f396ca18e217c79dd006e10836bf8092e28f76bb18ba38a2fed83db9f26b"
   ["4.0.9"]="12.0.16-9040@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
+  ["4.5.0"]="14.5.0-9004@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
 )
 
 get_migrator_tag(){
@@ -516,6 +541,7 @@ PG_CONFIG_TAGS=(
   ["4.0.7"]="20220304-150142-11-eb251f4d@sha256:0743350fbdadcaae1c0440f630ed23b1b5fa9d5608782d40da54bfa7ac772f36"
   ["4.0.8"]="20220404-180919-16-03066e2f@sha256:9ebbeedca00aac2aea721d54d078d947f9ac8850aa38208452cf6dc0a2a620df"
   ["4.0.9"]="20220503-234532-11-3223b318@sha256:1edbce69c27fe5b1391cc8925aa3a4775d4f5c4a3abb43a1fcf4fd494fc36860"
+  ["4.5.0"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
 )
 
 get_pg_config_tag(){
@@ -663,7 +689,7 @@ trap 0 1 2 3 15
 EOF
 
   chmod +x ${TMP_WORK_DIR}/${WD_CMD_FILE}
-  oc cp $@ ${TMP_WORK_DIR}/${WD_CMD_FILE} ${pod}:/tmp/${WD_CMD_FILE}
+  _oc_cp ${TMP_WORK_DIR}/${WD_CMD_FILE} ${pod}:/tmp/${WD_CMD_FILE} $@
   oc exec $@ ${pod} -- bash -c "rm -rf /tmp/${WD_CMD_COMPLETION_TOKEN} && /tmp/${WD_CMD_FILE} &"
   wait_cmd ${pod} $@
   oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
@@ -677,7 +703,7 @@ run_script_in_pod(){
   local options=( "$1" )
   shift
   local filename="$(basename "${script}")"
-  oc cp $@ "${script}" "${pod}:/tmp/${filename}"
+  _oc_cp "${script}" "${pod}:/tmp/${filename}" $@
   run_cmd_in_pod ${pod} "/tmp/${filename} ${options[@]}" $@
   oc exec $@ ${pod} -- bash -c "rm -f /tmp/${filename}}"
 }
@@ -1014,7 +1040,7 @@ setup_zen_core_service_connection(){
   ZEN_CORE_SERVICE=${ZEN_CORE_SERVICE:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].metadata.name}')}
   ZEN_CORE_PORT=${ZEN_CORE_PORT:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].spec.ports[?(@.name=="zencoreapi-tls")].port}')}
   ZEN_CORE_API_ENDPOINT="https://${ZEN_CORE_SERVICE}:${ZEN_CORE_PORT}"
-  ZEN_CORE_UID=${ZEN_CORE_UID:-"$(oc get ${OC_ARGS} watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.appConfigOverrides.cp4d.api.admin_uid}')"}
+  ZEN_CORE_UID=${ZEN_CORE_UID:-"1000330999"}
   ZEN_CORE_TOKEN=${ZEN_CORE_TOKEN:-"$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"}
   ZEN_INSTANCE_TYPE="discovery"
   ZEN_PROVISION_STATUS="PROVISIONED"
@@ -1034,14 +1060,16 @@ create_backup_instance_mappings(){
   brlog "INFO" "Instance mapping file: ${mapping_file}"
 }
 
+service_instance_query='.service_instances | if (. | length != 0) and (map(.addon_type == "discovery" and .provision_status == "PROVISIONED") | any) then .[] | select(.addon_type == "discovery" and .provision_status == "PROVISIONED") | .id else "null" end'
+
 create_restore_instance_mappings(){
   local rc=0
   local mapping='{ "instance_mappings" : []}'
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
-  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c elasticsearch
   local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'" -c elasticsearch)
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     brlog "INFO" "Discovery instances exist. Check if they are same instance."
     local src_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json" -c elasticsearch)
@@ -1098,9 +1126,9 @@ check_instance_mappings(){
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
   local file_name="$(basename "${MAPPING_FILE}")"
-  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c elasticsearch
   local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'" -c elasticsearch)
   local dest_instances=$(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[].dest_instance_id' /tmp/mapping.json" -c elasticsearch)
   for instance in ${dest_instances}
   do
@@ -1115,7 +1143,7 @@ check_instance_mappings(){
 get_instance_tuples(){
   ELASTIC_POD=$(get_elastic_pod)
   local file_name="$(basename "${MAPPING_FILE}")"
-  oc cp -c elasticsearch "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json"
+  _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c elasticsearch
   local mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c elasticsearch) )
   oc exec -c elasticsearch ${ELASTIC_POD} -- bash -c "rm -f /tmp/mapping.json"
   for map in "${mappings[@]}"
@@ -1143,7 +1171,7 @@ check_instance_exists(){
   setup_zen_core_service_connection
   ELASTIC_POD=${ELASTIC_POD:-$(get_elastic_pod)}
   local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if length == 0 then \"null\" else .[] |  select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | .id end'" -c elasticsearch)
+  local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'" -c elasticsearch)
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     return 0
   else
@@ -1164,7 +1192,7 @@ create_service_instance(){
     -e "s/#instance#/${TENANT_NAME}/g" \
     -e "s/#display_name#/${display_name}/g" \
     "${template}" > "${request_file}"
-  oc cp -c elasticsearch "${request_file}" "${ELASTIC_POD}:/tmp/request.json"
+  _oc_cp "${request_file}" "${ELASTIC_POD}:/tmp/request.json" -c elasticsearch
   if [ -z "${ZEN_USER_NAME+UNDEF}" ] ; then
     brlog "WARN" "'--cp4d-user-name' option is not provided. Use 'admin' as a user to create Discovery instance" >&2
     ZEN_USER_NAME="admin"
