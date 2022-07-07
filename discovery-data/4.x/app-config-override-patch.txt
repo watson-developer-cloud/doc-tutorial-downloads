@@ -1,0 +1,145 @@
+apiVersion: oppy.ibm.com/v1
+kind: TemporaryPatch
+metadata:
+  name: wd-app-config-override-patch
+spec:
+  apiVersion: discovery.watson.ibm.com/v1
+  kind: WatsonDiscovery
+  name: wd
+  patchType: patchStrategicMerge
+  patch:
+    api:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    cnm:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    coreapi:
+      coreapi_app:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    dfs:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    foundation:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    hdp:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    ingestion:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    migration:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    orchestrator:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    query:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    sdu:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    statelessapi:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    tooling:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    wire:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
+    wksml:
+      cr:
+        appConfigOverrides:
+          cp4d:
+            service_info:
+              license:
+                label: ""
+              release_notes:
+                label: ""
