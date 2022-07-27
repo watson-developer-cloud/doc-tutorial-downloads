@@ -30,7 +30,7 @@ Options:
     --cp4d-user-name <user_name>               User name to create Discovery instance. Default: admin.
     --log-output-dir <directory_path>          Specify outout direcotry of detailed component logs
     --continue-from <component_name>           Resume backup or restore from specified component. Values: wddata, etcd, postgresql, elastic, minio, archive, migration, post-restore
-    --quiesce-on-error=[true|false]            If true, not unqueisce on error during backup or restore. Default false on backup, true on restore.
+    --quiesce-on-error=[true|false]            If true, not unquiesce on error during backup or restore. Default false on backup, true on restore.
 
 Options (Advanced):
 Basically, you don't need these advanced options.
@@ -272,29 +272,10 @@ VERIFY_BACKUPFILE=${VERIFY_BACKUPFILE:-$VERIFY_ARCHIVE}
 
 verify_args
 
-export WD_VERSION=${WD_VERSION:-`get_version`}
-brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
-
 export COMMAND=${COMMAND}
 export TENANT_NAME=${TENANT_NAME}
 export SCRIPT_DIR=${SCRIPT_DIR}
 export OC_ARGS="${EXTRA_OC_ARGS}"
-
-###############
-# Prerequisite
-###############
-
-validate_version
-
-if [ -z "${CONTINUE_FROM_COMPONENT+UNDEF}" ] && [ -d "${BACKUP_DIR}" ] ; then
-  brlog "ERROR" "./${BACKUP_DIR} exists. Please remove it."
-  exit 1
-fi
-
-if [ -d "${SPLITE_DIR}" ] ; then
-  brlog "ERROR" "Please remove ${SPLITE_DIR}"
-  exit 1
-fi
 
 ###############
 # Function
@@ -307,6 +288,30 @@ run () {
     "${SCRIPT_DIR}"/${COMP}-backup-restore.sh ${COMMAND} ${TENANT_NAME} -f "${BACKUP_DIR}/${COMP}.backup"
   done
 }
+
+
+###############
+# Prerequisite
+###############
+
+disable_trap
+
+oc_login_as_scripts_user
+
+export WD_VERSION=${WD_VERSION:-`get_version`}
+brlog "INFO" "Watson Discovery Version: ${WD_VERSION}"
+
+validate_version
+
+if [ -z "${CONTINUE_FROM_COMPONENT+UNDEF}" ] && [ -d "${BACKUP_DIR}" ] ; then
+  brlog "ERROR" "./${BACKUP_DIR} exists. Please remove it."
+  exit 1
+fi
+
+if [ -d "${SPLITE_DIR}" ] ; then
+  brlog "ERROR" "Please remove ${SPLITE_DIR}"
+  exit 1
+fi
 
 ###############
 # Main
@@ -447,7 +452,10 @@ fi
 
 brlog "INFO" "Clean up"
 
+delete_service_account "${BACKUP_RESTORE_SA}"
 rm -rf "${BACKUP_DIR}"
+
+disable_trap
 
 echo
 brlog "INFO" "Backup/Restore Script Complete"

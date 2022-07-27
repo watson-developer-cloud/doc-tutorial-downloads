@@ -17,7 +17,7 @@ ELASTIC_BACKUP="elastic_snapshot.tar.gz"
 ELASTIC_BACKUP_DIR="elastic_backup"
 ELASTIC_BACKUP_BUCKET="elastic-backup"
 ELASTIC_REQUEST_TIMEOUT="30m"
-ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-180}
+ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-600}
 ELASTIC_WAIT_GREEN_STATE=${ELASTIC_WAIT_GREEN_STATE:-"false"}
 ELASTIC_JOB_FILE="${SCRIPT_DIR}/src/elastic-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
@@ -26,6 +26,7 @@ CURRENT_COMPONENT="elastic"
 MINIO_SCRIPTS=${SCRIPT_DIR}/minio-backup-restore.sh
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 DISABLE_MC_MULTIPART=${DISABLE_MC_MULTIPART:-true}
+KEEP_SNAPSHOT=${KEEP_SNAPSHOT:-false}
 
 printUsage() {
   echo "Usage: $(basename ${0}) [command] [releaseName] [-f backupFile]"
@@ -91,7 +92,6 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   ELASTIC_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=elastic-secret -o jsonpath="{.items[*].metadata.name}"`
   MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
   DISCO_SVC_ACCOUNT=`get_service_account`
-  NAMESPACE=${NAMESPACE:-`oc config view --minify --output 'jsonpath={..namespace}'`}
   CURRENT_TZ=`date "+%z" | tr -d '0'`
   if echo "${CURRENT_TZ}" | grep "+" > /dev/null; then
     TZ_OFFSET="UTC-`echo ${CURRENT_TZ} | tr -d '+'`"
@@ -123,6 +123,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   add_env_to_job_yaml "ELASTIC_WAIT_GREEN_STATE" "${ELASTIC_WAIT_GREEN_STATE}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "KEEP_SNAPSHOT" "${KEEP_SNAPSHOT}" "${ELASTIC_JOB_FILE}"
   add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${ELASTIC_JOB_FILE}"
 
   oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}" &> /dev/null || true
@@ -165,6 +166,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   if [ -z "$(ls tmp)" ] ; then
     rm -rf tmp
   fi
+  brlog "INFO" "Done"
   exit 0
 fi
 
@@ -307,7 +309,7 @@ EOF
   while true;
   do
     tmp_total_shards=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
-    if [ ${total_shards} -ge ${tmp_total_shards} ] ; then
+    if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ] ; then
       break
     else
       total_shards=${tmp_total_shards}
@@ -336,17 +338,20 @@ EOF
       sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
     done
   fi
-  brlog "INFO" "Delete snapshot"
-  run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
-  while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" ; do sleep 30; done && \
-  curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
-  echo
 
-  brlog "INFO" "Clean up"
-  start_minio_port_forward
-  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-  stop_minio_port_forward
-  echo 
+  if ! "${KEEP_SNAPSHOT:-false}" ; then
+    brlog "INFO" "Delete snapshot"
+    run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
+    while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" ; do sleep 30; done && \
+    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
+    echo
+
+    brlog "INFO" "Clean up"
+    start_minio_port_forward
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    stop_minio_port_forward
+    echo
+  fi
   brlog "INFO" "Restore Done"
   brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash

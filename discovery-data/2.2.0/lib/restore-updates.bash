@@ -11,7 +11,7 @@ elastic_updates(){
       oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
-  if [ `compare_version "${BACKUP_FILE_VERSION}" "2.1.2"` -le 0 ] ; then 
+  if [ $(compare_version "${BACKUP_FILE_VERSION:-$(get_backup_version)}" "2.1.2") -le 0 ] ; then 
     if ls "$UPDATE_DIR"/*.elupdate_script &> /dev/null ; then
       for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate_script; do
         UPDATE_SCRIPT_NAME=$(basename ${ELASTIC_COMMAND})

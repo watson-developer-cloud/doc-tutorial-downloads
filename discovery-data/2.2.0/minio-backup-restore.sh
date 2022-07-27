@@ -152,7 +152,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
-  brlog "INFO" "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Done"
 fi
 
 # restore

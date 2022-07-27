@@ -132,11 +132,10 @@ EOF
   echo >> ${ELASTIC_LOG}
   brlog "INFO" "Sent restore request"
   total_shards=0
-  sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
   while true;
   do
     tmp_total_shards=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"`
-    if [ ${total_shards} -ge ${tmp_total_shards} ] ; then
+    if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ]; then
       break
     else
       total_shards=${tmp_total_shards}
@@ -165,14 +164,17 @@ EOF
       sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
     done
   fi
-  brlog "INFO" "Delete snapshot"
-  curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" || true >> ${ELASTIC_LOG}
-  while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" ; do sleep 30; done >> ${ELASTIC_LOG}
-  curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}" >> ${ELASTIC_LOG}
-  echo >> ${ELASTIC_LOG}
 
-  brlog "INFO" "Clean up"
-  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-  echo
+  if ! "${KEEP_SNAPSHOT:-false}" ; then
+    brlog "INFO" "Delete snapshot"
+    curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" || true >> ${ELASTIC_LOG}
+    while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" ; do sleep 30; done >> ${ELASTIC_LOG}
+    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}" >> ${ELASTIC_LOG}
+    echo >> ${ELASTIC_LOG}
+
+    brlog "INFO" "Clean up"
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    echo
+  fi
   cat "${ELASTIC_LOG}"
 fi
