@@ -217,7 +217,7 @@ if [ ${COMMAND} = 'restore' ] ; then
     brlog "INFO" "Extracting archive..."
     run_cmd_in_pod ${PG_POD} "cd tmp && rm -rf ${PG_BACKUP_DIR} && tar ${PG_ARCHIVE_OPTION} -xf ${PG_BACKUP}" ${OC_ARGS}
   fi
-  brlog "INFO" "Restorering data..."
+  brlog "INFO" "Restoreing data..."
   run_cmd_in_pod ${PG_POD} 'export PGUSER=${STKEEPER_PG_SU_USERNAME} && \
   export PGPASSWORD=${STKEEPER_PG_SU_PASSWORD} && \
   export PGHOST=${HOSTNAME} && \

@@ -69,7 +69,7 @@ declare -r nsopt
 declare -r instance_name
 
 TMP_WORK_DIR="${SCRIPT_DIR}/tmp/mt-mt-workspace"
-CURRENT_COMPONENT="mt-mt-migration"
+CURRENT_COMPONENT="migration"
 TENANT_NAME="${instance_name:-wd}"
 MINIO_MT_MIGRATION_SCRIPTS="${SCRIPT_DIR}/src/minio-mt-migration.sh"
 BACKUP_RESTORE_DIR_IN_POD="/tmp/"

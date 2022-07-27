@@ -3,12 +3,16 @@ export WD_CMD_COMPLETION_TOKEN="completed_wd_command"
 export BACKUP_VERSION_FILE="tmp/version.txt"
 export DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
 export BACKUP_RESTORE_LOG_DIR="${BACKUP_RESTORE_LOG_DIR:-wd-backup-restore-logs-`date "+%Y%m%d_%H%M%S"`}"
+export BACKUP_RESTORE_SA="${BACKUP_RESTORE_SA:-wd-discovery-backup-restore-sa}"
+
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
   "ERROR") export LOG_LEVEL_NUM=0;;
   "WARN")  export LOG_LEVEL_NUM=1;;
   "INFO")  export LOG_LEVEL_NUM=2;;
   "DEBUG") export LOG_LEVEL_NUM=3;;
 esac
+
+declare -a trap_commands
 
 brlog(){
   LOG_LEVEL=$1
@@ -26,6 +30,22 @@ brlog(){
   if [ ${LEVEL_NUM} -le ${LOG_LEVEL_NUM} ] ; then
     echo "${LOG_DATE}: [${LOG_LEVEL}] ${LOG_MESSAGE}"
   fi
+}
+
+trap_add(){
+  trap_commands+=("$1")
+  printf -v joined '%s;' "${trap_commands[@]}"
+  cmd="$(echo -n "${joined%;}")"
+  trap "${cmd}" 0 1 2 3 15
+}
+
+trap_remove(){
+  trap_commands=( "${trap_commands[@]/$1}" )
+  trap "${trap_commands}" 0 1 2 3 15
+}
+
+disable_trap(){
+  trap 0 1 2 3 15
 }
 
 _oc_cp(){
@@ -417,7 +437,11 @@ unquiesce(){
   echo
   brlog "INFO" "Activating"
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
-  trap 0 1 2 3 15
+  trap_remove "brlog 'ERROR' 'Error occur while running scripts.'"
+  trap_remove "unquiesce"
+  trap_remove "./post-restore.sh ${TENANT_NAME}"
+  trap_remove "brlog 'ERROR' 'Backup/Restore failed.'"
+  trap_remove "show_quiesce_error_message"
 
   if [ "${WAIT_ACTIVATION_COMPLETE:-false}" != "false" ] ; then
     brlog "INFO" "Wait for the pods to be ready"
@@ -467,12 +491,16 @@ quiesce(){
   fi
 
   if "${quiesce_on_error}" ; then
-    trap "show_quiesce_error_message" 0 1 2 3 15
+    trap_add "show_quiesce_error_message"
   else
     if [ "$COMMAND" = "restore" ] ; then
-      trap "brlog 'ERROR' 'Error occur while running scripts.' ; unquiesce; ./post-restore.sh ${TENANT_NAME}; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+      trap_add "brlog 'ERROR' 'Error occur while running scripts.'"
+      trap_add "unquiesce"
+      trap_add "./post-restore.sh ${TENANT_NAME}"
+      trap_add "brlog 'ERROR' 'Backup/Restore failed.'"
     else
-      trap "unquiesce; brlog 'ERROR' 'Backup/Restore failed.'" 0 1 2 3 15
+      trap_add "unquiesce"
+      trap_add "brlog 'ERROR' 'Backup/Restore failed.'"
     fi
   fi
   oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
@@ -512,6 +540,7 @@ MIGRATOR_TAGS=(
   ["4.0.8"]="12.0.15-9069@sha256:82a0f396ca18e217c79dd006e10836bf8092e28f76bb18ba38a2fed83db9f26b"
   ["4.0.9"]="12.0.16-9040@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
   ["4.5.0"]="14.5.0-9004@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
+  ["4.5.1"]="14.5.1-9054@sha256:f2c320e24154df6da1c39bf9894e0ae7065aa1bbe881b165edfd2c8f05f21a2a"
 )
 
 get_migrator_tag(){
@@ -542,6 +571,7 @@ PG_CONFIG_TAGS=(
   ["4.0.8"]="20220404-180919-16-03066e2f@sha256:9ebbeedca00aac2aea721d54d078d947f9ac8850aa38208452cf6dc0a2a620df"
   ["4.0.9"]="20220503-234532-11-3223b318@sha256:1edbce69c27fe5b1391cc8925aa3a4775d4f5c4a3abb43a1fcf4fd494fc36860"
   ["4.5.0"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
+  ["4.5.1"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
 )
 
 get_pg_config_tag(){
@@ -1208,4 +1238,41 @@ create_service_instance(){
   if [ "${instance_id}" != "null" ] ; then
     echo "${instance_id}"
   fi
+}
+
+create_service_account(){
+  local service_account="$1"
+  if [ -n "$(oc get sa ${service_account})" ] ; then
+    brlog "INFO" "Service Account ${service_account} already exists" >&2
+  else
+    brlog "INFO" "Create Service Account for scripts: ${service_account}"
+    oc ${OC_ARGS} create sa ${service_account}
+  fi
+  trap_add "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
+  local namespace="${NAMESPACE:-$(oc config view --minify --output 'jsonpath={..namespace}')}"
+  oc ${OC_ARGS} policy add-role-to-user edit system:serviceaccount:${namespace}:${service_account}
+}
+
+get_oc_token(){
+  local service_account="$1"
+  local token_secret=$(oc ${OC_ARGS} get sa ${service_account} -o jsonpath='{.secrets[0].name}')
+  if [[ "${token_secret}" != *"token"*  ]] ; then
+    token_secret=$(oc ${OC_ARGS} get sa ${service_account} -o jsonpath='{.secrets[1].name}')
+  fi
+  oc ${OC_ARGS} get secret ${token_secret} --template '{{.data.token}}' | base64 --decode
+}
+
+delete_service_account(){
+  local service_account="$1"
+  oc ${OC_ARGS} delete sa ${service_account} --ignore-not-found
+  trap_remove "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
+  brlog "INFO" "Deleted scripts service account: ${service_account}"
+  brlog "INFO" "Please acknowledge that you have to oc login to the cluster to continue to work"
+}
+
+oc_login_as_scripts_user(){
+  create_service_account "${BACKUP_RESTORE_SA}"
+  local oc_token=$(get_oc_token "${BACKUP_RESTORE_SA}")
+  local cluster=$(oc config view --minify --output jsonpath='{..server}')
+  oc login "${cluster}" --token="${oc_token}"
 }

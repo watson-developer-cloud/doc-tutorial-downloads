@@ -27,27 +27,6 @@ spec:
       hostNetwork: false
       hostPID: false
       hostIPC: false
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - preference:
-                matchExpressions:
-                  - key: beta.kubernetes.io/arch
-                    operator: In
-                    values:
-                      - amd64
-                      - ppc64le
-                      - s390x
-              weight: 2
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: beta.kubernetes.io/arch
-                    operator: In
-                    values:
-                      - amd64
-                      - ppc64le
-                      - s390x
       containers:
       - image: #image#
         imagePullPolicy: IfNotPresent

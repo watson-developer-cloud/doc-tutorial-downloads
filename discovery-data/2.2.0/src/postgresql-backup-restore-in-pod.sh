@@ -80,7 +80,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   brlog "INFO" "Extracting archive..."
   tar ${PG_ARCHIVE_OPTION} -xf ${PG_BACKUP}
 
-  brlog "INFO" "Restorering data..."
+  brlog "INFO" "Restoreing data..."
   for DATABASE in $(ls ${PG_BACKUP_DIR}/*.dump | cut -d "/" -f 2 | grep -v dfs | sed -e "s/^pg_//g" -e "s/.dump$//g")
   do
     if psql -lqt | cut -d \| -f 1 | grep -qw "${DATABASE}" ; then
