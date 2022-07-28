@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql-backup-restore-job
+  labels:
+    app.kubernetes.io/name: ibm-watson-ks
+    postgresql: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql
+    release: ${RELEASE_NAME_UNDERSCORE}
+    function: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql-${COMMAND}
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ibm-watson-ks
+        postgresql: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql
+        release: ${RELEASE_NAME_UNDERSCORE}
+        function: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql-${COMMAND}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ${RELEASE_NAME_UNDERSCORE}-edb-postgresql-backup-restore
+          image: cp.icr.io/cp/cpd/postgresql:12.7
+          env:
+            - name: TZ
+              value: "UTC+7"
+            - name: PGPASSWORD
+              value: "${PGPASSWORD}"
+            - name: PGPORT
+              value: "${PGPORT}"
+            - name: PGHOST
+              value: "${RELEASE_NAME_UNDERSCORE}-edb-postgresql-rw.${NAMESPACE}"
+            - name: PGUSER
+              value: "${PGUSER}"
+          resources:
+            limits:
+              cpu: "800m"
+              memory: "2Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              psql -l
+              echo "${COMMAND} begin:"
+              if [ "${COMMAND}" = "backup" ]; then
+                pg_dump --clean -Fc jobq_${RELEASE_NAME_UNDERSCORE} > /tmp/jobq_${RELEASE_NAME_UNDERSCORE}.custom
+                pg_dump --clean -Fc model_management_api > /tmp/model_management_api.custom
+                pg_dump --clean -Fc model_management_api_v2 > /tmp/model_management_api_v2.custom
+                pg_dump --clean -Fc awt > /tmp/awt.custom
+              else
+                echo "restore"
+              fi
+              touch /tmp/${COMMAND}_job_complete
+              while true;
+              do
+                if [ -e /tmp/${COMMAND}_complete ] ; then
+                  break
+                else
+                  echo "waiting for ${COMMAND} to be completed"
+                  sleep 10
+                fi
+              done
