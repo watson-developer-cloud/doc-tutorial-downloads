@@ -102,7 +102,8 @@ if [ `compare_version "${WD_VERSION}" "2.2.1"` -ge 0 ] && [ `compare_version "${
   fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
       export PGHOST=${PGHOST:-$HOSTNAME} && \
-      psql -d dadmin -c "UPDATE projects SET tenant_id = '"'default'"' ;" &&\
+      psql -d dadmin -c "UPDATE tenants SET id = '"'default'"' ;" && \
+      psql -d dadmin -c "UPDATE projects SET tenant_id = '"'default'"' ;" && \
       psql -d dadmin -c "UPDATE datasets SET tenant_id = '"'default'"' ;" ' ${OC_ARGS}
 fi
 ## End set default
