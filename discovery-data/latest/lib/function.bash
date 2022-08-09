@@ -471,7 +471,7 @@ Backup/Restore failed.
 You can restart ${COMMAND} with adding "--continue-form" option:
   ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
 You can unquiesce WatsonDiscovery by this command:
-  oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": true}}}}'
+  oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
 EOS
 )
   brlog "ERROR" "${message}"
@@ -926,7 +926,7 @@ get_primary_pg_pod(){
   if [ `compare_version "${wd_version}" "4.0.0"` -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "postgresql=${TENANT_NAME}-discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
   else
-    for POD in $(oc get pods ${OC_ARS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
+    for POD in $(oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
       if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
         echo "${POD}"
         break
@@ -1251,6 +1251,25 @@ create_service_account(){
   trap_add "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
   local namespace="${NAMESPACE:-$(oc config view --minify --output 'jsonpath={..namespace}')}"
   oc ${OC_ARGS} policy add-role-to-user edit system:serviceaccount:${namespace}:${service_account}
+  if [ -n "$(oc ${OC_ARGS} get role discovery-operator-role --ignore-not-found)" ] ; then
+    # This is 2.2.1 install. Link operator role to this service account to get permission of discovery resources
+    cat <<EOF | oc ${OC_ARGS} apply -f -
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ${service_account}-rb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: discovery-operator-role
+subjects:
+- namespace: ${namespace}
+  kind: ServiceAccount
+  name: ${service_account}
+EOF
+    trap_add "brlog 'INFO' '  oc delete rolebinding ${service_account}-rb'"
+  fi
 }
 
 get_oc_token(){
@@ -1265,7 +1284,9 @@ get_oc_token(){
 delete_service_account(){
   local service_account="$1"
   oc ${OC_ARGS} delete sa ${service_account} --ignore-not-found
+  oc ${OC_ARGS} delete rolebinding ${service_account}-rb --ignore-not-found
   trap_remove "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
+  trap_remove "brlog 'INFO' '  oc delete rolebinding ${service_account}-rb'"
   brlog "INFO" "Deleted scripts service account: ${service_account}"
   brlog "INFO" "Please acknowledge that you have to oc login to the cluster to continue to work"
 }
