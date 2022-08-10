@@ -1250,7 +1250,7 @@ create_service_account(){
   fi
   trap_add "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
   local namespace="${NAMESPACE:-$(oc config view --minify --output 'jsonpath={..namespace}')}"
-  oc ${OC_ARGS} policy add-role-to-user edit system:serviceaccount:${namespace}:${service_account}
+  oc ${OC_ARGS} policy add-role-to-user admin system:serviceaccount:${namespace}:${service_account}
   if [ -n "$(oc ${OC_ARGS} get role discovery-operator-role --ignore-not-found)" ] ; then
     # This is 2.2.1 install. Link operator role to this service account to get permission of discovery resources
     cat <<EOF | oc ${OC_ARGS} apply -f -
@@ -1283,8 +1283,8 @@ get_oc_token(){
 
 delete_service_account(){
   local service_account="$1"
-  oc ${OC_ARGS} delete sa ${service_account} --ignore-not-found
   oc ${OC_ARGS} delete rolebinding ${service_account}-rb --ignore-not-found
+  oc ${OC_ARGS} delete sa ${service_account} --ignore-not-found
   trap_remove "brlog 'INFO' 'You currently oc login as a scripts Service Account. You can rerun scripts with this. You can delete it by this command:' ; brlog 'INFO' '  oc delete sa ${service_account}'"
   trap_remove "brlog 'INFO' '  oc delete rolebinding ${service_account}-rb'"
   brlog "INFO" "Deleted scripts service account: ${service_account}"
