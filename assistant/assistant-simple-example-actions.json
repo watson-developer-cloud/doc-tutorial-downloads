@@ -1,0 +1,1100 @@
+{
+  "name": "Watson Assistant simple example",
+  "type": "action",
+  "valid": true,
+  "status": "Available",
+  "created": "2021-09-22T17:42:44.447Z",
+  "updated": "2022-09-22T17:23:53.729Z",
+  "language": "en",
+  "skill_id": "626c44a9-0485-49d7-b1a5-d63bee0ca6b0",
+  "workspace": {
+    "actions": [
+      {
+        "steps": [
+          {
+            "step": "step_475",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "Sorry, it looks like you already have an appointment scheduled."
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_475",
+            "condition": {
+              "exists": {
+                "skill_variable": "Appointment"
+              }
+            },
+            "next_step": "step_821"
+          },
+          {
+            "step": "step_821",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "What day would you like to come in?"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                },
+                {
+                  "response_type": "date",
+                  "repeat_on_reprompt": true
+                }
+              ]
+            },
+            "handlers": [
+              {
+                "type": "not_found",
+                "title": "validation_not_found_handler",
+                "output": {
+                  "generic": [
+                    {
+                      "values": [
+                        {
+                          "text": "I'm sorry, I did not catch that, please restate your response."
+                        }
+                      ],
+                      "response_type": "text"
+                    }
+                  ]
+                },
+                "handler": "validation_not_found_handler",
+                "resolver": {
+                  "type": "prompt_again"
+                },
+                "next_handler": "validation_not_found_max_tries_handler"
+              },
+              {
+                "type": "not_found_max_tries",
+                "title": "validation_not_found_max_tries_handler",
+                "handler": "validation_not_found_max_tries_handler",
+                "resolver": {
+                  "type": "fallback"
+                }
+              }
+            ],
+            "question": {
+              "entity": "sys-date",
+              "max_tries": 3
+            },
+            "resolver": {
+              "type": "continue"
+            },
+            "variable": "step_821",
+            "next_step": "step_178"
+          },
+          {
+            "step": "step_178",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "What time works for you?"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [
+              {
+                "type": "not_found",
+                "title": "validation_not_found_handler",
+                "output": {
+                  "generic": [
+                    {
+                      "values": [
+                        {
+                          "text": "I'm sorry, I did not catch that, please restate your response."
+                        }
+                      ],
+                      "response_type": "text"
+                    }
+                  ]
+                },
+                "handler": "validation_not_found_handler",
+                "resolver": {
+                  "type": "prompt_again"
+                },
+                "next_handler": "validation_not_found_max_tries_handler"
+              },
+              {
+                "type": "not_found_max_tries",
+                "title": "validation_not_found_max_tries_handler",
+                "handler": "validation_not_found_max_tries_handler",
+                "resolver": {
+                  "type": "fallback"
+                }
+              }
+            ],
+            "question": {
+              "entity": "sys-time",
+              "max_tries": 3
+            },
+            "resolver": {
+              "type": "continue"
+            },
+            "variable": "step_178",
+            "next_step": "step_434"
+          },
+          {
+            "step": "step_434",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "OK, "
+                          },
+                          {
+                            "skill_variable": "Customer_name"
+                          },
+                          {
+                            "scalar": ". You have an appointment for "
+                          },
+                          {
+                            "skill_variable": "Appointment_time"
+                          },
+                          {
+                            "scalar": " on "
+                          },
+                          {
+                            "skill_variable": "Appointment_date"
+                          },
+                          {
+                            "scalar": ". See you then!"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "context": {
+              "variables": [
+                {
+                  "value": {
+                    "expression": "{ \"date\": ${step_821}, \"time\": ${step_178} }"
+                  },
+                  "skill_variable": "Appointment"
+                },
+                {
+                  "value": {
+                    "expression": "${Appointment}.time.value.reformatDateTime(\"h:mm a\")"
+                  },
+                  "skill_variable": "Appointment_time"
+                },
+                {
+                  "value": {
+                    "expression": "${Appointment}.date.value.reformatDateTime(\"MMM d\")"
+                  },
+                  "skill_variable": "Appointment_date"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_434"
+          }
+        ],
+        "title": "I need to make an appointment",
+        "action": "action_16402",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "intent": "action_16402_intent_39177"
+        },
+        "variables": [
+          {
+            "title": "What time works for you?",
+            "variable": "step_178",
+            "data_type": "time"
+          },
+          {
+            "title": "OK, {variable}. You have an appointment for {variable} on {varia",
+            "variable": "step_434",
+            "data_type": "any"
+          },
+          {
+            "title": "Sorry, it looks like you already have an appointment scheduled.",
+            "variable": "step_475",
+            "data_type": "any"
+          },
+          {
+            "variable": "step_761_result_1",
+            "data_type": "any"
+          },
+          {
+            "title": "What day would you like to come in?",
+            "variable": "step_821",
+            "data_type": "date"
+          }
+        ],
+        "next_action": "fallback",
+        "topic_switch": {
+          "allowed_from": true,
+          "allowed_into": true
+        },
+        "disambiguation_opt_out": false
+      },
+      {
+        "steps": [
+          {
+            "step": "step_875",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "Sorry, you don't seem to have an appointment scheduled. Nothing to cancel!"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_875",
+            "condition": {
+              "not": {
+                "exists": {
+                  "skill_variable": "Appointment"
+                }
+              }
+            },
+            "next_step": "step_312"
+          },
+          {
+            "step": "step_312",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "You currently have an appointment scheduled for "
+                          },
+                          {
+                            "skill_variable": "Appointment_time"
+                          },
+                          {
+                            "scalar": " on "
+                          },
+                          {
+                            "skill_variable": "Appointment_date"
+                          },
+                          {
+                            "scalar": ". Are you sure you want to cancel?"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                },
+                {
+                  "options": [
+                    {
+                      "label": "Yes",
+                      "value": {
+                        "input": {
+                          "text": "Yes"
+                        }
+                      }
+                    },
+                    {
+                      "label": "No",
+                      "value": {
+                        "input": {
+                          "text": "No"
+                        }
+                      }
+                    }
+                  ],
+                  "response_type": "option",
+                  "repeat_on_reprompt": true
+                }
+              ]
+            },
+            "handlers": [
+              {
+                "type": "not_found",
+                "title": "validation_not_found_handler",
+                "output": {
+                  "generic": [
+                    {
+                      "values": [
+                        {
+                          "text": "I'm sorry, I did not catch that, please restate your response."
+                        }
+                      ],
+                      "response_type": "text"
+                    }
+                  ]
+                },
+                "handler": "validation_not_found_handler",
+                "resolver": {
+                  "type": "prompt_again"
+                },
+                "next_handler": "validation_not_found_max_tries_handler"
+              },
+              {
+                "type": "not_found_max_tries",
+                "title": "validation_not_found_max_tries_handler",
+                "handler": "validation_not_found_max_tries_handler",
+                "resolver": {
+                  "type": "fallback"
+                }
+              }
+            ],
+            "question": {
+              "entity": "sys-yes-no",
+              "max_tries": 3
+            },
+            "resolver": {
+              "type": "continue"
+            },
+            "variable": "step_312",
+            "next_step": "step_779"
+          },
+          {
+            "step": "step_779",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "OK, I have canceled your appointment."
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "context": {
+              "variables": [
+                {
+                  "value": {
+                    "expression": "null"
+                  },
+                  "skill_variable": "Appointment"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_779",
+            "condition": {
+              "eq": [
+                {
+                  "variable": "step_312"
+                },
+                {
+                  "scalar": "yes"
+                }
+              ]
+            }
+          }
+        ],
+        "title": "I need to cancel my appointment",
+        "action": "action_32299",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "intent": "action_32299_intent_11834"
+        },
+        "variables": [
+          {
+            "title": "You currently have an appointment scheduled for {variable} on {v",
+            "variable": "step_312",
+            "data_type": "yes_no"
+          },
+          {
+            "title": "OK, I have canceled your appointment.",
+            "variable": "step_779",
+            "data_type": "any"
+          },
+          {
+            "title": "Sorry, you don't seem to have an appointment scheduled. Nothing ",
+            "variable": "step_875",
+            "data_type": "any"
+          }
+        ],
+        "next_action": "action_16402",
+        "topic_switch": {
+          "allowed_from": true,
+          "allowed_into": true
+        },
+        "disambiguation_opt_out": false
+      },
+      {
+        "steps": [
+          {
+            "step": "step_481",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "Hmm ... Sorry, you don't seem to have an appointment scheduled."
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_481",
+            "condition": {
+              "not": {
+                "exists": {
+                  "skill_variable": "Appointment"
+                }
+              }
+            },
+            "next_step": "step_434"
+          },
+          {
+            "step": "step_434",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "You have an appointment scheduled for "
+                          },
+                          {
+                            "skill_variable": "Appointment_time"
+                          },
+                          {
+                            "scalar": " on "
+                          },
+                          {
+                            "skill_variable": "Appointment_date"
+                          },
+                          {
+                            "scalar": ". We're looking forward to seeing you!"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_434"
+          }
+        ],
+        "title": "When is my appointment?",
+        "action": "action_4444",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "intent": "action_4444_intent_22194"
+        },
+        "variables": [
+          {
+            "title": "You have an appointment scheduled for {variable} on {variable}. ",
+            "variable": "step_434",
+            "data_type": "any"
+          },
+          {
+            "title": "Hmm ... Sorry, you don't seem to have an appointment scheduled.",
+            "variable": "step_481",
+            "data_type": "any"
+          }
+        ],
+        "next_action": "action_32299",
+        "topic_switch": {
+          "allowed_from": true,
+          "allowed_into": true
+        },
+        "disambiguation_opt_out": false
+      },
+      {
+        "steps": [
+          {
+            "step": "step_001",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text": "I'm afraid I don't understand. Please rephrase your question."
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "end_action"
+            },
+            "variable": "step_001",
+            "condition": {
+              "lte": [
+                {
+                  "system_variable": "no_action_matches_count"
+                },
+                {
+                  "scalar": 3
+                }
+              ]
+            },
+            "next_step": "step_002"
+          },
+          {
+            "step": "step_002",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text": ""
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "invoke_another_action_and_end",
+              "invoke_action": {
+                "action": "fallback",
+                "parameters": null,
+                "result_variable": "step_002_result_1"
+              }
+            },
+            "variable": "step_002",
+            "condition": {
+              "gt": [
+                {
+                  "system_variable": "no_action_matches_count"
+                },
+                {
+                  "scalar": 3
+                }
+              ]
+            }
+          }
+        ],
+        "title": "No action matches",
+        "action": "anything_else",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "expression": "anything_else"
+        },
+        "variables": [
+          {
+            "title": "I am afraid I do not understand what you are asking, please re-p",
+            "variable": "step_001",
+            "data_type": "any"
+          },
+          {
+            "variable": "step_002",
+            "data_type": "any"
+          },
+          {
+            "variable": "step_002_result_1",
+            "data_type": "any"
+          }
+        ],
+        "disambiguation_opt_out": true
+      },
+      {
+        "steps": [
+          {
+            "step": "step_001",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text": "I'm afraid I don't understand. I can connect you to an agent."
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "connect_to_agent",
+              "response": {
+                "transfer_info": {
+                  "target": {}
+                },
+                "agent_available": {
+                  "message": "Let's send you to an available agent."
+                },
+                "agent_unavailable": {
+                  "message": "There are no agents available at this time. When one becomes available, we'll connect you."
+                },
+                "message_to_human_agent": ""
+              }
+            },
+            "variable": "step_001",
+            "condition": {
+              "eq": [
+                {
+                  "system_variable": "fallback_reason"
+                },
+                {
+                  "scalar": "Step validation failed"
+                }
+              ]
+            },
+            "next_step": "step_002"
+          },
+          {
+            "step": "step_002",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text": "Sorry I couldn't assist you. I will connect you to an agent right away."
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "connect_to_agent",
+              "response": {
+                "transfer_info": {
+                  "target": {}
+                },
+                "agent_available": {
+                  "message": "Let's send you to an available agent."
+                },
+                "agent_unavailable": {
+                  "message": "There are no agents available at this time. When one becomes available, we'll connect you."
+                },
+                "message_to_human_agent": ""
+              }
+            },
+            "variable": "step_002",
+            "condition": {
+              "eq": [
+                {
+                  "system_variable": "fallback_reason"
+                },
+                {
+                  "scalar": "Agent requested"
+                }
+              ]
+            },
+            "next_step": "step_003"
+          },
+          {
+            "step": "step_003",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text": "I am afraid I do not understand what you are asking, let me connect you to an agent."
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "connect_to_agent",
+              "response": {
+                "transfer_info": {
+                  "target": {}
+                },
+                "agent_available": {
+                  "message": "Let's send you to an available agent."
+                },
+                "agent_unavailable": {
+                  "message": "There are no agents available at this time. When one becomes available, we'll connect you."
+                },
+                "message_to_human_agent": ""
+              }
+            },
+            "variable": "step_003",
+            "condition": {
+              "eq": [
+                {
+                  "system_variable": "fallback_reason"
+                },
+                {
+                  "scalar": "No action matches"
+                }
+              ]
+            }
+          }
+        ],
+        "title": "Fallback",
+        "action": "fallback",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "intent": "fallback_connect_to_agent"
+        },
+        "variables": [
+          {
+            "title": "I'm afraid I don't understand. I can connect you to an agent.",
+            "variable": "step_001",
+            "data_type": "any"
+          },
+          {
+            "title": "Sorry I couldn't assist you. I will connect you to an agent righ",
+            "variable": "step_002",
+            "data_type": "any"
+          },
+          {
+            "title": "I am afraid I do not understand what you are asking, let me conn",
+            "variable": "step_003",
+            "data_type": "any"
+          }
+        ],
+        "next_action": "anything_else",
+        "disambiguation_opt_out": true
+      },
+      {
+        "steps": [
+          {
+            "step": "step_480",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "Welcome to the Watson Assistant example. What's your name?"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "handlers": [],
+            "question": {
+              "free_text": true,
+              "only_populate_when_prompted": true
+            },
+            "resolver": {
+              "type": "continue"
+            },
+            "variable": "step_480",
+            "condition": {
+              "not": {
+                "exists": {
+                  "skill_variable": "Customer_name"
+                }
+              }
+            },
+            "next_step": "step_001"
+          },
+          {
+            "step": "step_001",
+            "output": {
+              "generic": [
+                {
+                  "values": [
+                    {
+                      "text_expression": {
+                        "concat": [
+                          {
+                            "scalar": "Hi, "
+                          },
+                          {
+                            "skill_variable": "Customer_name"
+                          },
+                          {
+                            "scalar": "! How can I help you?"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "response_type": "text",
+                  "selection_policy": "sequential"
+                }
+              ]
+            },
+            "context": {
+              "variables": [
+                {
+                  "value": {
+                    "variable": "step_480"
+                  },
+                  "skill_variable": "Customer_name"
+                }
+              ]
+            },
+            "handlers": [],
+            "resolver": {
+              "type": "continue"
+            },
+            "variable": "step_001"
+          }
+        ],
+        "title": "Greet customer",
+        "action": "welcome",
+        "boosts": [],
+        "handlers": [],
+        "condition": {
+          "expression": "welcome"
+        },
+        "variables": [
+          {
+            "title": "Hi, {variable}! How can I help you?",
+            "variable": "step_001",
+            "data_type": "any"
+          },
+          {
+            "title": "Welcome to the Watson Assistant example. What's your name?",
+            "variable": "step_480",
+            "data_type": "any"
+          }
+        ],
+        "next_action": "action_4444",
+        "disambiguation_opt_out": true
+      }
+    ],
+    "intents": [
+      {
+        "intent": "action_16402_intent_39177",
+        "examples": [
+          {
+            "text": "I need to make an appointment"
+          }
+        ]
+      },
+      {
+        "intent": "action_32299_intent_11834",
+        "examples": [
+          {
+            "text": "I need to cancel my appointment"
+          }
+        ]
+      },
+      {
+        "intent": "action_4444_intent_22194",
+        "examples": [
+          {
+            "text": "When is my appointment?"
+          }
+        ]
+      },
+      {
+        "intent": "fallback_connect_to_agent",
+        "examples": [
+          {
+            "text": "Agent help"
+          },
+          {
+            "text": "Call agent"
+          },
+          {
+            "text": "Can I connect to an agent?"
+          },
+          {
+            "text": "I would like to speak to a human"
+          },
+          {
+            "text": "I would like to speak to someone"
+          }
+        ],
+        "description": "Please transfer me to an agent"
+      }
+    ],
+    "entities": [
+      {
+        "entity": "sys-date",
+        "values": []
+      },
+      {
+        "entity": "sys-number",
+        "values": []
+      },
+      {
+        "entity": "sys-time",
+        "values": []
+      },
+      {
+        "entity": "sys-yes-no",
+        "values": []
+      }
+    ],
+    "metadata": {
+      "api_version": {
+        "major_version": "v2",
+        "minor_version": "2018-11-08"
+      }
+    },
+    "variables": [
+      {
+        "title": "Appointment",
+        "variable": "Appointment",
+        "data_type": "any",
+        "description": ""
+      },
+      {
+        "title": "Appointment date",
+        "variable": "Appointment_date",
+        "data_type": "any",
+        "description": ""
+      },
+      {
+        "title": "Appointment time",
+        "variable": "Appointment_time",
+        "data_type": "any",
+        "description": ""
+      },
+      {
+        "title": "Customer name",
+        "variable": "Customer_name",
+        "data_type": "string",
+        "description": ""
+      },
+      {
+        "title": "result",
+        "variable": "result",
+        "data_type": "any",
+        "description": ""
+      }
+    ],
+    "data_types": [],
+    "counterexamples": [],
+    "system_settings": {
+      "topic_switch": {
+        "enabled": true,
+        "messages": {
+          "confirm_return": {
+            "text": "Return to previous topic?"
+          },
+          "confirm_switch": {
+            "text": "Switch from the current topic?"
+          }
+        },
+        "question_steps_threshold": 2
+      },
+      "disambiguation": {
+        "prompt": "Did you mean:",
+        "enabled": true,
+        "randomize": true,
+        "max_suggestions": 5,
+        "suggestion_text_policy": "title",
+        "none_of_the_above_prompt": "None of the above"
+      },
+      "intent_classification": {
+        "training_backend_version": "v2"
+      },
+      "spelling_auto_correct": true
+    },
+    "learning_opt_out": false
+  },
+  "description": "created for assistant 208e930c-5ee6-448b-80fd-ead45bacb463",
+  "assistant_id": "208e930c-5ee6-448b-80fd-ead45bacb463",
+  "workspace_id": "626c44a9-0485-49d7-b1a5-d63bee0ca6b0",
+  "dialog_settings": {},
+  "next_snapshot_version": "14"
+}
