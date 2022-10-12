@@ -109,7 +109,13 @@ get_version(){
   else
     if [ -n "`oc get wd ${OC_ARGS} ${TENANT_NAME}`" ] ; then
       local version=`oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath='{.spec.version}'`
-      echo "${version%%-*}"
+      if [ "${version}" = "main" ] ; then
+        # this should be latest version
+        set_scripts_version > /dev/null
+        echo "${SCRIPT_VERSION}"
+      else
+        echo "${version%%-*}"
+      fi
     elif [ -n "`oc get pod ${OC_ARGS} -l "app.kubernetes.io/name=discovery,run=management"`" ] ; then
       if [ "`oc ${OC_ARGS} get is wd-migrator -o jsonpath="{.status.tags[*].tag}" | tr -s '[[:space:]]' '\n' | tail -n1`" = "12.0.4-1048" ] ; then
         echo "2.1.3"
@@ -468,7 +474,7 @@ wait_pod_ready(){
 show_quiesce_error_message(){
   local message=$( cat << EOS
 Backup/Restore failed.
-You can restart ${COMMAND} with adding "--continue-form" option:
+You can restart ${COMMAND} with adding "--continue-from" option:
   ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
 You can unquiesce WatsonDiscovery by this command:
   oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
@@ -541,6 +547,7 @@ MIGRATOR_TAGS=(
   ["4.0.9"]="12.0.16-9040@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
   ["4.5.0"]="14.5.0-9004@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
   ["4.5.1"]="14.5.1-9054@sha256:f2c320e24154df6da1c39bf9894e0ae7065aa1bbe881b165edfd2c8f05f21a2a"
+  ["4.5.3"]="14.5.2-10573@sha256:aa2f015c0eab1ffab1fcf3a1f249608fa47a6cf4eb9684cf496dc41388730adc"
 )
 
 get_migrator_tag(){
@@ -572,6 +579,7 @@ PG_CONFIG_TAGS=(
   ["4.0.9"]="20220503-234532-11-3223b318@sha256:1edbce69c27fe5b1391cc8925aa3a4775d4f5c4a3abb43a1fcf4fd494fc36860"
   ["4.5.0"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
   ["4.5.1"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
+  ["4.5.3"]="20220705-150429-1523-990b004f@sha256:c9323c3a468c9097f83c1268541c94885d7a9713d3532e5058612cd1b05515c5"
 )
 
 get_pg_config_tag(){
@@ -1189,7 +1197,7 @@ get_instance_tuples(){
 }
 
 require_tenant_backup(){
-  local wd_version=${WD_VERSION:-$(get_backup_version)}
+  local wd_version=${WD_VERSION:-$(get_version)}
   local backup_file_version=${BACKUP_FILE_VERSION:-$(get_backup_version)}
   if [ $(compare_version ${backup_file_version} "2.1.3") -le 0 ] && [ $(compare_version "${wd_version}" "4.0.5") -le 0 ] ; then
     return 0

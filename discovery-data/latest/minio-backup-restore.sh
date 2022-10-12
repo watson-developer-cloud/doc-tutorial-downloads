@@ -129,6 +129,10 @@ if [ "${COMMAND}" = "backup" ] ; then
     for line in ${EXCLUDE_OBJECTS}
     do
       if [[ ${line} == ${bucket}* ]] ; then
+        if [ "${line#$bucket }" = "*" ] ; then
+          brlog "DEBUG" "SKIP ${bucket}"
+          continue 2
+        fi
         EXTRA_MC_MIRROR_COMMAND="--exclude ${line#$bucket } ${EXTRA_MC_MIRROR_COMMAND}"
       fi
     done
