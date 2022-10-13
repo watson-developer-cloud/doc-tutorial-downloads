@@ -3,3 +3,4 @@ common tmp*
 common sdu*
 common user/dadmin/.sparkStaging*
 common user/sdu/.sparkStaging*
+ranker-wire-all *

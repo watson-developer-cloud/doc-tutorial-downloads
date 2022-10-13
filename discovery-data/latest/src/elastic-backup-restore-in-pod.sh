@@ -39,6 +39,31 @@ fi
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-true}
 
 
+function clean_up(){
+  if ! "${KEEP_SNAPSHOT:-false}" ; then
+    brlog "INFO" "Start clean up"
+    brlog "INFO" "Delete snapshot"
+    curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" || true >> ${ELASTIC_LOG}
+    retry_count=0
+    while true;
+      do
+      if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then
+        sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
+        retry_count=$((retry_count += 1))
+      else
+        break
+      fi
+    done
+    while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" ; do sleep 30; done >> ${ELASTIC_LOG}
+    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}" >> ${ELASTIC_LOG}
+    echo >> ${ELASTIC_LOG}
+
+    brlog "INFO" "Clean up"
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    echo
+  fi
+}
+
 if [ "${COMMAND}" = "backup" ] ; then
   ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
   if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
@@ -132,13 +157,28 @@ EOF
   echo >> ${ELASTIC_LOG}
   brlog "INFO" "Sent restore request"
   total_shards=0
+  waited_seconds=0
   while true;
   do
-    tmp_total_shards=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"`
-    if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ]; then
-      break
+    recovery_status=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery"`
+    brlog "DEBUG" "Recovery status: ${recovery_status}"
+    if [ "${recovery_status}" != "{}" ] ; then
+      tmp_total_shards=`echo "${recovery_status}" | jq ".[].shards[]" | jq -s ". | length"`
+      if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ]; then
+        break
+      else
+        total_shards=${tmp_total_shards}
+      fi
     else
-      total_shards=${tmp_total_shards}
+      waited_seconds=$((waited_seconds += ELASTIC_STATUS_CHECK_INTERVAL))
+      if [ ${waited_seconds} -ge ${ELASTIC_MAX_WAIT_RECOVERY_SECONDS} ] ; then
+        brlog "ERROR" "There is no recovery status in ${ELASTIC_MAX_WAIT_RECOVERY_SECONDS} seconds. Please contact support."
+        clean_up
+        cat "${ELASTIC_LOG}"
+        exit 1
+      else
+        brlog "WARN" "Empty status. Check status after ${ELASTIC_STATUS_CHECK_INTERVAL} seconds."
+      fi
     fi
     sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
   done
@@ -165,16 +205,7 @@ EOF
     done
   fi
 
-  if ! "${KEEP_SNAPSHOT:-false}" ; then
-    brlog "INFO" "Delete snapshot"
-    curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" || true >> ${ELASTIC_LOG}
-    while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" ; do sleep 30; done >> ${ELASTIC_LOG}
-    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}" >> ${ELASTIC_LOG}
-    echo >> ${ELASTIC_LOG}
+  clean_up
 
-    brlog "INFO" "Clean up"
-    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-    echo
-  fi
   cat "${ELASTIC_LOG}"
 fi

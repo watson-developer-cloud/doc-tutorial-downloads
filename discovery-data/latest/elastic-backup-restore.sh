@@ -17,7 +17,8 @@ ELASTIC_BACKUP="elastic_snapshot.tar.gz"
 ELASTIC_BACKUP_DIR="elastic_backup"
 ELASTIC_BACKUP_BUCKET="elastic-backup"
 ELASTIC_REQUEST_TIMEOUT="30m"
-ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-600}
+ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-300}
+ELASTIC_MAX_WAIT_RECOVERY_SECONDS=${ELASTIC_MAX_WAIT_RECOVERY_SECONDS:-3600}
 ELASTIC_WAIT_GREEN_STATE=${ELASTIC_WAIT_GREEN_STATE:-"false"}
 ELASTIC_JOB_FILE="${SCRIPT_DIR}/src/elastic-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
@@ -124,6 +125,7 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "KEEP_SNAPSHOT" "${KEEP_SNAPSHOT}" "${ELASTIC_JOB_FILE}"
+  add_env_to_job_yaml "ELASTIC_MAX_WAIT_RECOVERY_SECONDS" "${ELASTIC_MAX_WAIT_RECOVERY_SECONDS}" "${ELASTIC_JOB_FILE}"
   add_volume_to_job_yaml "${JOB_PVC_NAME:-emptyDir}" "${ELASTIC_JOB_FILE}"
 
   oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}" &> /dev/null || true
@@ -179,6 +181,33 @@ else
 fi
 export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
+
+function clean_up(){
+  if ! "${KEEP_SNAPSHOT:-false}" ; then
+    brlog "INFO" "Clean up"
+    brlog "INFO" "Delete snapshot"
+    run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
+    retry_count=0 && \
+    while true; \
+    do\
+      if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then\
+        sleep '${ELASTIC_STATUS_CHECK_INTERVAL}';\
+        retry_count=$((retry_count += 1));\
+      else\
+        break;\
+      fi;\
+    done && \
+    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
+    echo
+
+    brlog "INFO" "Clean up"
+    start_minio_port_forward
+    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    stop_minio_port_forward
+    echo
+  fi
+}
+
 
 # backup elastic search
 if [ ${COMMAND} = 'backup' ] ; then
@@ -304,15 +333,28 @@ EOF
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}" | grep acknowledged && \
   curl -XPOST -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"indices\": \"*,-application_logs-*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}" | grep accepted && echo ' ${OC_ARGS} -c elasticsearch
   brlog "INFO" "Sent restore request"
+  waited_seconds=0
   total_shards=0
-  sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
   while true;
   do
-    tmp_total_shards=`fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
-    if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ] ; then
-      break
+    recovery_status=`fetch_cmd_result ${ELASTIC_POD} 'rm -f /tmp/recovery_status.json && export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" > /tmp/recovery_status.json && cat /tmp/recovery_status.json' ${OC_ARGS} -c elasticsearch`
+    brlog "DEBUG" "Recovery Status: ${recovery_status}"
+    if [ "${recovery_status}" != "{}" ] ; then
+      tmp_total_shards=`fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch`
+      if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ] ; then
+        break
+      else
+        total_shards=${tmp_total_shards}
+      fi
     else
-      total_shards=${tmp_total_shards}
+      waited_seconds=$((waited_seconds += ELASTIC_STATUS_CHECK_INTERVAL))
+      if [ ${waited_seconds} -ge ${ELASTIC_MAX_WAIT_RECOVERY_SECONDS} ] ; then
+        brlog "ERROR" "There is no recovery status in ${ELASTIC_MAX_WAIT_RECOVERY_SECONDS} seconds. Please contact support."
+        clean_up
+        exit 1
+      else
+        brlog "WARN" "Empty status. Check status after ${ELASTIC_STATUS_CHECK_INTERVAL} seconds."
+      fi
     fi
     sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
   done
@@ -339,19 +381,8 @@ EOF
     done
   fi
 
-  if ! "${KEEP_SNAPSHOT:-false}" ; then
-    brlog "INFO" "Delete snapshot"
-    run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
-    while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" ; do sleep 30; done && \
-    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
-    echo
+  clean_up
 
-    brlog "INFO" "Clean up"
-    start_minio_port_forward
-    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-    stop_minio_port_forward
-    echo
-  fi
   brlog "INFO" "Restore Done"
   brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash

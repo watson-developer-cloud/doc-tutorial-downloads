@@ -56,6 +56,10 @@ if [ "${COMMAND}" = "backup" ] ; then
     for line in ${EXCLUDE_OBJECTS}
     do
       if [[ ${line} == ${bucket}* ]] ; then
+        if [ "${line#$bucket }" = "*" ] ; then
+          brlog "DEBUG" "SKIP ${bucket}"
+          continue 2
+        fi
         EXTRA_MC_MIRROR_COMMAND="--exclude ${line#$bucket } ${EXTRA_MC_MIRROR_COMMAND}"
       fi
     done
@@ -82,6 +86,7 @@ fi
 
 # restore
 if [ "${COMMAND}" = "restore" ] ; then
+  MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]}" "--recursive" )
   if [ -z ${MINIO_BACKUP} ] ; then
     printUsage
   fi
@@ -96,17 +101,29 @@ if [ "${COMMAND}" = "restore" ] ; then
       if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${bucket}/`" ] ; then
         ${MC} ${MC_OPTS[@]} --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
       fi
-      if [ "${bucket}" = "discovery-dfs" ] ; then
+      if [ "${bucket}" = "discovery-dfs" ] || [ "${bucket}" = "ranker-wire-all" ] ; then
+        brlog "INFO" "    Skip ${bucket}"
         continue
       fi
+      if [ ! -e ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/* ] ; then
+        brlog "INFO" "    No data in ${bucket}"
+        continue
+      fi
+      brlog "INFO" "    Restore ${bucket}"
       set +e
       while true;
       do
-        ${MC} ${MC_OPTS[@]} --quiet mirror ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} 2>&1
+        ${MC} ${MC_OPTS[@]} --quiet cp ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/ wdminio/${bucket}/ 2>&1
         RC=$?
         echo "RC=${RC}"
         if [ $RC -eq 0 ] ; then
+          MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]/--continue}" )
           break
+        else
+          # Add --continue option to resume
+          if [[ ! " ${MC_MIRROR_OPTS[*]} " =~ " --continue " ]]; then
+            MC_MIRROR_OPTS+=( "--continue" )
+          fi
         fi
         brlog "WARN" "Some file could not be transfered. Retrying..."
       done

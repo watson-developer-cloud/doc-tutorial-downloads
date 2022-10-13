@@ -346,7 +346,8 @@ if [ ${COMMAND} = 'backup' ] ; then
   else
     ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
   fi
-  export ALL_COMPONENT=${ALL_COMPONENT}
+  export ALL_COMPONENT
+  export VERIFY_COMPONENT=( "${ALL_COMPONENT[@]}")
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_`date "+%Y%m%d_%H%M%S"`.backup"}
   mkdir -p "${BACKUP_DIR}"
   if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
@@ -369,7 +370,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   tar ${BACKUPFILE_TAR_OPTIONS[@]} -cf "${BACKUP_FILE}" "${BACKUP_DIR}"
   brlog "INFO" "Checking backup file list"
   BACKUP_FILES=`ls ${BACKUP_DIR}`
-  for COMP in ${ALL_COMPONENT[@]}
+  for COMP in ${VERIFY_COMPONENT[@]}
   do
     if ! echo "${BACKUP_FILES}" | grep ${COMP} > /dev/null ; then
       brlog "ERROR" "${COMP}.backup does not exists."
@@ -384,7 +385,7 @@ if [ ${COMMAND} = 'backup' ] ; then
 fi
 
 if [ ${COMMAND} = 'restore' ] ; then
-  if [ -z "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] ; then
+  if [ -z "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] || [ ! -f "${BACKUP_VERSION_FILE}" ] ; then
     brlog "INFO" "Extract archive"
     tar ${BACKUPFILE_TAR_OPTIONS[@]} -xf "${BACKUP_FILE}"
   fi
@@ -392,7 +393,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   if [ $(compare_version "${BACKUP_FILE_VERSION}" "4.0.6") -ge 0 ] ; then
     if ! check_instance_mappings ; then
       brlog "ERROR" "Incorrect instance mapping."
-      brlog "INFO" "You can restart ${COMMAND} with '--continue-form' option like:"
+      brlog "INFO" "You can restart ${COMMAND} with '--continue-from' option like:"
       brlog "INFO" "./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from wddata"
       exit 1
     fi

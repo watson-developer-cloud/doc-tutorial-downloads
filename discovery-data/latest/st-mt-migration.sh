@@ -65,15 +65,24 @@ fi
 
 ## Start migration
 
-brlog "INFO" "Start migration job"
+brlog "INFO" "Delete existing migration component"
+oc annotate ${OC_ARGS} wd ${TENANT_NAME} --overwrite watsonDiscoveryEnableMigration-
+oc annotate ${OC_ARGS} wd ${TENANT_NAME} --overwrite watsonDiscoveryMigrationSourceVersion-
+oc delete ${OC_ARGS} watsondiscoverymigration ${TENANT_NAME} --ignore-not-found
+
+brlog "INFO" "Start migration"
 
 oc annotate ${OC_ARGS} wd ${TENANT_NAME} --overwrite watsonDiscoveryMigrationSourceVersion=${source_version}
 oc annotate ${OC_ARGS} wd ${TENANT_NAME} --overwrite watsonDiscoveryEnableMigration=true
 while :
 do
   migration_status=$(oc get ${OC_ARGS} watsondiscoverymigration ${TENANT_NAME} -o jsonpath='{.status.migrationStatus}' --ignore-not-found || echo "NotFound")
+  migration_job_status=$(oc get ${OC_ARGS} job -l app=multi-tenant-migration,icpdsupport/addOnId=discovery,tenant=${TENANT_NAME} -o jsonpath='{.items[0].status.conditions[?(@.type=="Failed")].status}' --ignore-not-found || echo "NotFound")
   if [ "${migration_status}" = "Completed" ] ; then
     break
+  elif [ "${migration_job_status}" = "True" ] ; then
+    brlog "ERROR" "Migration job failed. Please contact support."
+    exit 1
   else
     sleep 60
   fi

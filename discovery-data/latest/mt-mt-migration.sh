@@ -10,25 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # Parse args
 #############
 
-show_help() {
-  cat << EOS
-Estimate storage usage during migration for each PostgreSQL pod.
-usage: $0 [options]
-options:
-  -h, --help                           Print help info.
-  -n, --namespace         ns           [Optional] Namespace where Watson Discovery is installed. If not specified, use the namespace set in current context.
-  -i, --instance          name         [Optional] Name of WatsonDiscovery custom resource to run against.
-EOS
-}
-
 while [[ $# -gt 0 ]]
 do
   OPT=$1
   case $OPT in
-    -h | --help)
-      show_help
-      exit 0
-      ;;
     -n | --namespace)
       if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
         brlog "ERROR" "option requires an argument: $1"
