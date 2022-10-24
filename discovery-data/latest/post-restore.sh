@@ -99,7 +99,7 @@ fi
 
 ## Set default as tenant ID
 if [ `compare_version "${WD_VERSION}" "2.2.1"` -ge 0 ] && [ `compare_version "${WD_VERSION}" "4.0.5"` -le 0 ] && [ `compare_version "${BACKUP_FILE_VERSION}" "2.2.0"` -le 0 ] ; then
-  brlog "Update tenant id to default"
+  brlog "INFO" "Update tenant id to default"
   fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
       export PGHOST=${PGHOST:-$HOSTNAME} && \
@@ -110,7 +110,7 @@ fi
 ## End set default
 
 ## Update ranker version to run retrain
-brlog "Update ranker training version"
+brlog "INFO" "Update ranker training version"
 fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
       export PGHOST=${PGHOST:-$HOSTNAME} && \
