@@ -547,7 +547,8 @@ MIGRATOR_TAGS=(
   ["4.0.9"]="12.0.16-9040@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
   ["4.5.0"]="14.5.0-9004@sha256:cdbd9cb5eda984fae392c3decab212facc69675d0246468940440a1305b8aa88"
   ["4.5.1"]="14.5.1-9054@sha256:f2c320e24154df6da1c39bf9894e0ae7065aa1bbe881b165edfd2c8f05f21a2a"
-  ["4.5.3"]="14.5.2-10573@sha256:aa2f015c0eab1ffab1fcf3a1f249608fa47a6cf4eb9684cf496dc41388730adc"
+  ["4.5.3"]="14.5.2-10588@sha256:614d7ca6616cd43c9ce813ddd98cd85ba676fee9979b592355c0fe7006bf0173"
+  ["4.6.0"]="master-194@sha256:e08a1d4135451264a766b530b986ec6cab8cc05b73d3d82fb9fd0cd853431e6f"
 )
 
 get_migrator_tag(){
@@ -580,6 +581,7 @@ PG_CONFIG_TAGS=(
   ["4.5.0"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
   ["4.5.1"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
   ["4.5.3"]="20220705-150429-1523-990b004f@sha256:c9323c3a468c9097f83c1268541c94885d7a9713d3532e5058612cd1b05515c5"
+  ["4.6.0"]="20220519-010245-5-e4d8540b@sha256:e5a4caa82117fff857b7a0e8c66164ae75702cb1494411c5bbbccadaec259d9f"
 )
 
 get_pg_config_tag(){
@@ -606,7 +608,7 @@ launch_migrator_job(){
   PG_CONFIGMAP=`get_pg_configmap`
   PG_SECRET=`get_pg_secret`
   ETCD_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=etcd-cxn -o jsonpath="{.items[0].metadata.name}"`
-  ETCD_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=etcd-root -o jsonpath="{.items[*].metadata.name}"`
+  ETCD_SECRET=`oc ${OC_ARGS} get secret -l "tenant=${TENANT_NAME},app in (etcd,etcd-root)" -o jsonpath="{.items[*].metadata.name}"`
   CK_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=ck-secret -o jsonpath="{.items[*].metadata.name}"`
   MINIO_CONFIGMAP=`oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=minio -o jsonpath="{.items[0].metadata.name}"`
   MINIO_SECRET=`oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},app=minio-auth -o jsonpath="{.items[*].metadata.name}"`
@@ -1027,7 +1029,7 @@ setup_etcd_env(){
     ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,etcd_cluster=${TENANT_NAME}-discovery-etcd" | tr '[[:space:]]' '\n' | grep etcd-client)
   fi
   ETCD_ENDPOINT="https://${ETCD_SERVICE}:2379"
-  ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=etcd-root)
+  ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l "tenant=${TENANT_NAME},app in (etcd,etcd-root)")
   ETCD_USER=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode)
   ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
   ETCD_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)
