@@ -47,8 +47,8 @@ function clean_up(){
     retry_count=0
     while true;
       do
-      if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then
-        sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
+      if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" >> ${ELASTIC_LOG} && [ $retry_count -lt 10 ]; then
+        sleep 60
         retry_count=$((retry_count += 1))
       else
         break

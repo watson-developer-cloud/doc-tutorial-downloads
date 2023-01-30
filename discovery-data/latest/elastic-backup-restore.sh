@@ -24,7 +24,6 @@ ELASTIC_JOB_FILE="${SCRIPT_DIR}/src/elastic-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
 TMP_WORK_DIR="tmp/elastic_workspace"
 CURRENT_COMPONENT="elastic"
-MINIO_SCRIPTS=${SCRIPT_DIR}/minio-backup-restore.sh
 MINIO_FORWARD_PORT=${MINIO_FORWARD_PORT:-39001}
 DISABLE_MC_MULTIPART=${DISABLE_MC_MULTIPART:-true}
 KEEP_SNAPSHOT=${KEEP_SNAPSHOT:-false}
@@ -191,7 +190,7 @@ function clean_up(){
     while true; \
     do\
       if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then\
-        sleep '${ELASTIC_STATUS_CHECK_INTERVAL}';\
+        sleep 60;\
         retry_count=$((retry_count += 1));\
       else\
         break;\
