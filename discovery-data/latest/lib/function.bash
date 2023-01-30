@@ -552,7 +552,7 @@ MIGRATOR_TAGS=(
 )
 
 get_migrator_tag(){
-  local wd_version=${WD_VERSION:-`get_version`}
+  local wd_version=${WD_VERSION:-$(get_version)}
   if [ -n "${MIGRATOR_TAGS["${wd_version}"]+UNDEFINE}" ] ; then
     echo "${MIGRATOR_TAGS["${wd_version}"]}"
   else
@@ -562,7 +562,16 @@ get_migrator_tag(){
 }
 
 get_migrator_image(){
-  echo "`get_migrator_repo`:${MIGRATOR_TAG:-`get_migrator_tag`}"
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version "${wd_version}" "4.6.0") -le 0 ] ; then
+    echo "$(get_migrator_repo):${MIGRATOR_TAG:-$(get_migrator_tag)}"
+  else
+    utils_repo="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.dockerRegistryPrefix}')"
+    utils_image="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.name}')"
+    utils_tag="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.tag}')"
+    utils_digest="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.digest}')"
+    echo "${utils_repo}/${utils_image}:${utils_tag}@${utils_digest}"
+  fi
 }
 
 # Get postgres configure image tag in 4.0.0 or later.
@@ -588,6 +597,10 @@ get_pg_config_tag(){
   local wd_version=${WD_VERSION:-`get_version`}
   if [ -n "${PG_CONFIG_TAGS["${wd_version}"]+UNDEFINE}" ] ; then
     echo "${PG_CONFIG_TAGS["${wd_version}"]}"
+  elif [ -n "$(oc get watsondiscoverywire ${TENANT_NAME} -o jsonpath='{.spec.wire.postgresConfigJob.image.tag}')" ] ; then
+    pg_config_tag="$(oc get watsondiscoverywire ${TENANT_NAME} -o jsonpath='{.spec.wire.postgresConfigJob.image.tag}')"
+    pg_config_digest="$(oc get watsondiscoverywire ${TENANT_NAME} -o jsonpath='{.spec.wire.postgresConfigJob.image.digest}')"
+    echo "${pg_config_tag}@${pg_config_digest}"
   else
     brlog "ERROR" "Can not find configure-postgres image tag for ${wd_version}" >&2
     exit 1
@@ -595,7 +608,6 @@ get_pg_config_tag(){
 }
 
 launch_migrator_job(){
-  MIGRATOR_TAG="${MIGRATOR_TAG:-`get_migrator_tag`}"
   MIGRATOR_JOB_NAME="wd-migrator-job"
   MIGRATOR_JOB_TEMPLATE="${SCRIPT_DIR}/src/migrator-job-template.yml"
   MIGRATOR_JOB_FILE="${SCRIPT_DIR}/src/migrator-job.yml"
@@ -637,6 +649,7 @@ launch_migrator_job(){
     -e "s/#pg-pass-key#/${PG_SECRET_PASS_KEY}/g" \
     "${MIGRATOR_JOB_TEMPLATE}" > "${MIGRATOR_JOB_FILE}"
 
+  oc ${OC_ARGS} delete -f "${MIGRATOR_JOB_FILE}" --ignore-not-found
   oc ${OC_ARGS} apply -f "${MIGRATOR_JOB_FILE}"
 }
 
@@ -1092,10 +1105,19 @@ setup_zen_core_service_connection(){
 create_backup_instance_mappings(){
   brlog "INFO" "Creating instance mapping file"
   local mapping_file="${MAPPING_FILE:-${BACKUP_DIR}/instance_mapping.json}"
+  local wd_version="${WD_VERSION:-$(get_version)}"
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
   token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks ${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID} -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
-  mappings=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v2/serviceInstance' -H 'Authorization: Bearer ${token}' | jq -r '.requestObj[] | select(.ServiceInstanceType == \"discovery\" and .ProvisionStatus == \"PROVISIONED\") | { \"display_name\": .ServiceInstanceDisplayName, \"source_instance_id\": .CreateArguments.metadata.instanceId, \"dest_instance_id\": \"<new_instance_id>\"}' | jq -s '{\"instance_mappings\": .}'" -c elasticsearch)
+  if [ $(compare_version ${wd_version} "4.0.9") -le 0 ] ; then
+    mappings=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v2/serviceInstance' -H 'Authorization: Bearer ${token}' | jq -r '.requestObj[] | select(.ServiceInstanceType == \"discovery\" and .ProvisionStatus == \"PROVISIONED\") | { \"display_name\": .ServiceInstanceDisplayName, \"source_instance_id\": .CreateArguments.metadata.instanceId, \"dest_instance_id\": \"<new_instance_id>\"}' | jq -s '{\"instance_mappings\": .}'" -c elasticsearch)
+  else
+    mappings=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '.service_instances | if (. | length != 0) and (map(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | any) then .[] | select(.addon_type == \"discovery\" and .provision_status == \"PROVISIONED\") | { \"display_name\": .display_name, \"source_instance_id\": .id, \"dest_instance_id\": \"<new_instance_id>\"} else \"null\" end' | jq -s '{\"instance_mappings\": .}'" -c elasticsearch)
+  fi
+  if [ -z "${mappings}" ] || echo "${mappings}" | grep " null" > /dev/null || echo "${mappings}" | grep " \[\]" > /dev/null ; then
+    brlog "ERROR" "Failed to get instances with CP4D API"
+    exit 1
+  fi
   echo "${mappings}" > ${mapping_file}
   brlog "INFO" "Instance mapping file: ${mapping_file}"
 }
