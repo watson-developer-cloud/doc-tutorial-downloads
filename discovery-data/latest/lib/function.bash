@@ -1306,11 +1306,13 @@ EOF
 
 get_oc_token(){
   local service_account="$1"
-  local token_secret=$(oc ${OC_ARGS} get sa ${service_account} -o jsonpath='{.secrets[0].name}')
-  if [[ "${token_secret}" != *"token"*  ]] ; then
-    token_secret=$(oc ${OC_ARGS} get sa ${service_account} -o jsonpath='{.secrets[1].name}')
+  # OCP 4.12 doesn't automatically link token to ServiceAccount so instead use secret annotations
+  local token_secret=$(oc ${OC_ARGS} get secrets -o jsonpath='{range .items[?(@.metadata.annotations.kubernetes\.io\/service\-account\.name=="'"${service_account}"'")]}{.metadata.name}{"\n"}{end}' | grep -m1 'token')
+  if [ -z "${token_secret}" ]; then
+    brlog "ERROR" "Failed to find token in Service Account ${service_account}" >&2
+    return 1
   fi
-  oc ${OC_ARGS} get secret ${token_secret} --template '{{.data.token}}' | base64 --decode
+  oc ${OC_ARGS} extract secret/${token_secret} --keys=token --to=-
 }
 
 delete_service_account(){
