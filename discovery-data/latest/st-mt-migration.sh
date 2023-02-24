@@ -48,7 +48,7 @@ brlog "INFO" "Clean up datasets"
 
 setup_etcd_env
 setup_pg_env
-DATASETS=$(fetch_cmd_result ${ETCD_POD} "ETCDCTL_API=3 ETCDCTL_ENDPOINTS='${ETCD_ENDPOINT}' etcdctl --cert=/etc/etcdtls/operator/etcd-tls/etcd-client.crt --key=/etc/etcdtls/operator/etcd-tls/etcd-client.key --cacert=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt get /wex/global/dataset --prefix | grep '^/.*/-\.json$' | cut -d / -f 5| tr '\n' ',' | sed -E \"s/,/','/g; s/^/'/; s/..\$//\"")
+DATASETS=$(fetch_cmd_result ${ETCD_POD} "ETCDCTL_API=3 ETCDCTL_USER=${ETCD_USER}:${ETCD_PASSWORD} ETCDCTL_ENDPOINTS='${ETCD_ENDPOINT}' etcdctl --cert=/etc/etcdtls/operator/etcd-tls/etcd-client.crt --key=/etc/etcdtls/operator/etcd-tls/etcd-client.key --cacert=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt get /wex/global/dataset --prefix | grep '^/.*/-\.json$' | cut -d / -f 5| tr '\n' ',' | sed -E \"s/,/','/g; s/^/'/; s/..\$//\"")
 fetch_cmd_result ${PG_POD} "PGUSER=${PGUSER} PGPASSWORD=${PGPASSWORD} psql -d dadmin -c \"DELETE FROM ds WHERE dsid NOT IN ($DATASETS)\" && echo 'OK'"
 
 brlog "INFO" "Correct ElasticSearch Index"
