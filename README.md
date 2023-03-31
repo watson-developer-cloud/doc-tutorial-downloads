@@ -11,4 +11,3 @@ To begin working with the services, see their tutorial pages:
 - [Natural Language Understanding](https://cloud.ibm.com/docs/natural-language-understanding?topic=natural-language-understanding-getting-started)
 - [Speech to Text](https://cloud.ibm.com/docs/speech-to-text?topic=speech-to-text-gettingStarted)
 - [Text to Speech](https://cloud.ibm.com/docs/text-to-speech?topic=text-to-speech-gettingStarted)
-- [Tone Analyzer](https://cloud.ibm.com/docs/tone-analyzer?topic=tone-analyzer-gettingStarted)
