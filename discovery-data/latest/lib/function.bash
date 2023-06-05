@@ -1036,11 +1036,7 @@ check_etcd_available(){
 }
 
 setup_etcd_env(){
-  ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,tenant=${TENANT_NAME}" | tr '[[:space:]]' '\n' | grep etcd-client || echo "")
-  if [ -z "${ETCD_SERVICE}" ] ; then
-    # Etcd label changed on 4.0.4
-    ETCD_SERVICE=$(oc get svc ${OC_ARGS} -o jsonpath="{.items[*].metadata.name}" -l "app=etcd,etcd_cluster=${TENANT_NAME}-discovery-etcd" | tr '[[:space:]]' '\n' | grep etcd-client)
-  fi
+  ETCD_SERVICE="localhost"
   ETCD_ENDPOINT="https://${ETCD_SERVICE}:2379"
   ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l "tenant=${TENANT_NAME},app in (etcd,etcd-root)")
   ETCD_USER=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode)
