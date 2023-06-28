@@ -64,17 +64,17 @@ function clean_up(){
 }
 
 if [ "${COMMAND}" = "backup" ] ; then
-  ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
+  ${MC} ${MC_OPTS[@]} config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  if [ -n "$(${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
     ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
-  S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"`
+  S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g")
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" -H "Content-Type: application/json" -d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}" | grep acknowledged >> "${ELASTIC_LOG}"
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" -H "Content-Type: application/json" -d'{"indices": "*","ignore_unavailable": true,"include_global_state": false}' | grep accepted >> "${ELASTIC_LOG}"
   brlog "INFO" "Requested snapshot"
   while true;
   do
-    snapshot_status=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r ".snapshots[0].state"`
+    snapshot_status=$(curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r ".snapshots[0].state")
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
       curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r ".snapshots[0]"
@@ -86,7 +86,7 @@ if [ "${COMMAND}" = "backup" ] ; then
 ${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
 ===================================================
 EOF
-        ${MC} ${MC_OPTS[@]} mirror ${MC_MIRROR_OPTS[@]} wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+        ${MC} "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
         RC=$?
         echo "RC=${RC}" >> "${ELASTIC_LOG}"
         if [ $RC -eq 0 ] ; then
@@ -95,16 +95,16 @@ EOF
         brlog "WARN" "Some file could not be transfered. Retrying..."
       done
       brlog "INFO" "Archiving sanpshot..."
-      tar ${ELASTIC_TAR_OPTIONS[@]} -cf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
+      tar "${ELASTIC_TAR_OPTIONS[@]}" -cf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
       rm -rf ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
       break;
     elif [ "${snapshot_status}" = "FAILED" -o "${snapshot_status}" = "PARTIAL" ] ; then
       brlog "ERROR" "Snapshot failed"
-      brlog "INFO" "`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r '.snapshots[0]'`"
+      brlog "INFO" "$(curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}" | jq -r '.snapshots[0]')"
       break;
     else
       # comment out the progress because it shows always 0 until it complete.
-      # brlog "INFO" "Progress: `fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -c ".snapshots[0].shards"' ${OC_ARGS} -c elasticsearch`"
+      # brlog "INFO" "Progress: $(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -c ".snapshots[0].shards"' ${OC_ARGS} -c elasticsearch)"
       sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
     fi
   done
@@ -112,7 +112,7 @@ EOF
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" >> "${ELASTIC_LOG}" || true
   while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" >> "${ELASTIC_LOG}" ; do sleep 30; done
   echo
-  ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
 
 elif [ "${COMMAND}" = "restore" ] ; then
   if [ ! -e "${ELASTIC_BACKUP}" ] ; then
@@ -124,12 +124,12 @@ elif [ "${COMMAND}" = "restore" ] ; then
 
   brlog "INFO" "Extracting Archive..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
-  tar ${ELASTIC_TAR_OPTIONS[@]} -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
+  tar "${ELASTIC_TAR_OPTIONS[@]}" -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   rm -f ${ELASTIC_BACKUP}
   brlog "INFO" "Transferring data to MinIO..."
-  ${MC} ${MC_OPTS[@]} config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/`" ] ; then
-    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  ${MC} "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
+    ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
   while true;
   do
@@ -138,7 +138,7 @@ elif [ "${COMMAND}" = "restore" ] ; then
 ${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
 ===================================================
 EOF
-    ${MC} ${MC_OPTS[@]} mirror ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+    ${MC} "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
     RC=$?
     echo "RC=${RC}" >> "${ELASTIC_LOG}"
     if [ $RC -eq 0 ] ; then
@@ -147,7 +147,7 @@ EOF
     brlog "WARN" "Some file could not be transfered. Retrying..."
   done
   brlog "INFO" "Start Restoring snapshot"
-  S3_IP=`curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g"`
+  S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g")
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"${ELASTIC_REQUEST_TIMEOUT}\", \"discovery.zen.publish_timeout\": \"${ELASTIC_REQUEST_TIMEOUT}\"}}" >> ${ELASTIC_LOG}
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_all?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep acknowledged >> ${ELASTIC_LOG}
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/.*?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep acknowledged >> ${ELASTIC_LOG}
@@ -159,10 +159,10 @@ EOF
   waited_seconds=0
   while true;
   do
-    recovery_status=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery"`
+    recovery_status=$(curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery")
     brlog "DEBUG" "Recovery status: ${recovery_status}"
     if [ "${recovery_status}" != "{}" ] ; then
-      tmp_total_shards=`echo "${recovery_status}" | jq ".[].shards[]" | jq -s ". | length"`
+      tmp_total_shards=$(echo "${recovery_status}" | jq ".[].shards[]" | jq -s ". | length")
       if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ]; then
         break
       else
@@ -184,7 +184,7 @@ EOF
   brlog "INFO" "Total shards in snapshot: ${total_shards}"
   while true;
   do
-    done_count=`curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq '.[].shards[] | select(.stage == "DONE")' | jq -s ". | length"`
+    done_count=$(curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq '.[].shards[] | select(.stage == "DONE")' | jq -s ". | length")
     brlog "INFO" "${done_count} shards finished"
     if [ ${done_count} -ge ${total_shards} ] ; then
       break
@@ -195,7 +195,7 @@ EOF
   if [ "${ELASTIC_WAIT_GREEN_STATE}" = "true" ] ; then
     brlog "INFO" "Wait for the ElasticSearch to be Green State"
     while true;
-    cluster_status=`fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch`
+    cluster_status=$(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch)
     do
       if [ "${cluster_status}" = "green" ] ; then
         break;

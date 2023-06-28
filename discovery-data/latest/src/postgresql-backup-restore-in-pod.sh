@@ -42,7 +42,7 @@ mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
 # backup
 if [ ${COMMAND} = 'backup' ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
+  BACKUP_FILE=${BACKUP_FILE:-"pg_$(date "+%Y%m%d_%H%M%S").backup"}
   brlog "INFO" "Start backup postgresql..."
   mkdir -p ${TMP_WORK_DIR}/${PG_BACKUP_DIR}
   for DATABASE in $( psql -l | grep ${PGUSER} | cut -d "|" -f 1 | grep -v -e template -e postgres -e "^\s*$")
@@ -51,7 +51,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   done
   touch ${TMP_WORK_DIR}/${PG_BACKUP_DIR}/version_${PG_SCRIPT_VERSION}
   brlog "INFO" "Archiving data..."
-  tar ${PG_ARCHIVE_OPTION} -cf ${TMP_WORK_DIR}/${PG_BACKUP} -C ${TMP_WORK_DIR} ${PG_BACKUP_DIR} && rm -rf ${TMP_WORK_DIR}/${PG_BACKUP_DIR}
+  tar "${PG_TAR_OPTIONS[@]}" -cf "${TMP_WORK_DIR}/${PG_BACKUP}" -C "${TMP_WORK_DIR}" "${PG_BACKUP_DIR}" && rm -rf "${TMP_WORK_DIR}/${PG_BACKUP_DIR}"
 fi
 
 # restore

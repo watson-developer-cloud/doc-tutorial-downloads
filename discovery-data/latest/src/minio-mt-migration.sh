@@ -12,8 +12,11 @@ Options:
   -h, --help              Print help info
   -s, --source            Source name where create data
   -t, --target            Loop count to create data
+  --suffix                Bucket suffix. Default empty.
 EOS
 }
+
+bucket_suffix=""
 
 while (( $# > 0 )); do
   case "$1" in
@@ -28,6 +31,10 @@ while (( $# > 0 )); do
     -t | --target )
       shift
       target="$1"
+      ;;
+    --suffix )
+      shift
+      bucket_suffix="$1"
       ;;
     * )
       if [[ -z "$action" ]]; then
@@ -57,9 +64,9 @@ MC=mc
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
-${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
+${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
 
-for LOCATION in "cnm/mt" "common/mt" "exported-documents"; do
+for LOCATION in "cnm${bucket_suffix}/mt" "common${bucket_suffix}/mt" "exported-documents${bucket_suffix}"; do
   FOLDERS=$( (${MC} ${MC_OPTS[@]} --quiet --json ls "wdminio/${LOCATION}/${source}" || echo '{}') | jq -r '.key|values')
   for FOLDER in ${FOLDERS[@]}; do
     ${MC} ${MC_OPTS[@]} --quiet cp --recursive wdminio/${LOCATION}/${source}/${FOLDER} wdminio/${LOCATION}/${target}/${FOLDER}

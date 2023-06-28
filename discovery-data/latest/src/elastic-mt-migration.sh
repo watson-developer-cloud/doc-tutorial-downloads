@@ -13,6 +13,8 @@ Options:
 EOS
 }
 
+replica=0
+
 while (( $# > 0 )); do
   case "$1" in
     -h | --help )
@@ -30,6 +32,10 @@ while (( $# > 0 )); do
     --template)
       shift
       template="$1"
+      ;;
+    --replica)
+      shift
+      replica="$1"
       ;;
     * )
       if [[ -z "$action" ]]; then
@@ -88,7 +94,7 @@ if echo "${indices}" | grep "${source_index}" > /dev/null ; then
   curl "${ELASTIC_OPTIONS[@]}" -X POST "${ELASTIC_ENDPOINT}/${source_index}/_clone/${target_index}" -d"${json_clone_settings}"
 
   MAX_RETRY_COUNT=5
-  local retry_count=0
+  retry_count=0
   while :
   do
     curl "${ELASTIC_OPTIONS[@]}" "${ELASTIC_ENDPOINT}/_cluster/health/${target_index}?wait_for_status=green&timeout=30s" | grep -e "yellow" -e "green" && break
@@ -103,6 +109,7 @@ if echo "${indices}" | grep "${source_index}" > /dev/null ; then
 else
   echo "Source index ${source_index} not found. Create index for ${target_index}."
   sed -e "s/#tenant_id#/${target}/g" "${template}" > /tmp/index_request.json
+  sed -e "s/#replica_size#/${replica}/g" "${template}" > /tmp/index_request.json
   curl "${ELASTIC_OPTIONS[@]}" -X PUT "${ELASTIC_ENDPOINT}/${target_index}" -d@/tmp/index_request.json
   echo
   rm -f /tmp/index_request.json

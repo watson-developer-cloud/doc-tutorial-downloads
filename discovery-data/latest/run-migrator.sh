@@ -27,11 +27,11 @@ export TENANT_NAME=${TENANT_NAME}
 ORG_OC_ARGS=${OC_ARGS}
 BACKUP_FILE_NAME="wexdata.tar.gz"
 TMP_WORK_DIR="tmp/migration"
-MIGRATOR_LOG_FILE="migrator_`date '+%Y%m%d_%H%M%S'`.log"
+MIGRATOR_LOG_FILE="migrator_$(date '+%Y%m%d_%H%M%S').log"
 
 brlog "INFO" "Start migrator"
-launch_migrator_job
-get_job_pod "app.kubernetes.io/component=wd-migrator"
+launch_utils_job "wd-migrator-job"
+get_job_pod "app.kubernetes.io/component=wd-backkup-restore"
 wait_job_running ${POD}
 
 oc ${OC_ARGS} exec ${POD} -- bash -c 'touch /tmp/wexdata_copied'
@@ -40,7 +40,7 @@ FAILED_COUNT="0"
 brlog "INFO" "Waiting for migration job to be completed..."
 while :
 do
-  FAILED="`oc ${OC_ARGS} get job -o jsonpath='{.status.failed}' ${MIGRATOR_JOB_NAME}`"
+  FAILED="$(oc ${OC_ARGS} get job -o jsonpath='{.status.failed}' ${MIGRATOR_JOB_NAME})"
   if [ -n "${FAILED}" -a "${FAILED}" != "${FAILED_COUNT}" ] ; then
     if [ "${FAILED}" = "5" ] ; then
       brlog "ERROR" "Migration job failed ${FAILED} times."
@@ -49,10 +49,10 @@ do
     fi
     brlog "WARN" "Migration job failed (${FAILED} times), Retrying..."
     FAILED_COUNT="${FAILED}"
-    get_job_pod "app.kubernetes.io/component=wd-migrator"
+    get_job_pod "app.kubernetes.io/component=wd-backup-restore"
     wait_job_running ${POD}
     oc ${OC_ARGS} exec ${POD} -- bash -c 'touch /tmp/wexdata_copied'
-  elif [ "`oc ${OC_ARGS} get job -o jsonpath='{.status.succeeded}' ${MIGRATOR_JOB_NAME}`" = "1" ] ; then
+  elif [ "$(oc ${OC_ARGS} get job -o jsonpath='{.status.succeeded}' ${MIGRATOR_JOB_NAME})" = "1" ] ; then
     brlog "INFO" "Completed migration job"
     break;
   else

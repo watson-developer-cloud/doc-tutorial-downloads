@@ -63,8 +63,8 @@ function create_new_index() {
 
     echo "Creating new index ${NEW_INDEX} ..."
 
-    SETTINGS=`cat ${NEW_SETTINGS_JSON} | jq .\"${INDEX}\".settings`
-    MAPPINGS=`cat ${MAPPINGS_JSON} | jq .\"${INDEX}\".mappings`
+    SETTINGS=$(cat ${NEW_SETTINGS_JSON} | jq .\"${INDEX}\".settings)
+    MAPPINGS=$(cat ${MAPPINGS_JSON} | jq .\"${INDEX}\".mappings)
 
     INDEX_DATA='{"settings":'${SETTINGS}', "mappings":'${MAPPINGS}'}'
     INDEX_DATA_JSON=index_data.json
@@ -122,7 +122,7 @@ function clone_index() {
     OLD_NAME=$1
     NEW_NAME=$2
 
-    REPLICA_NUM=`get_replica_num ${OLD_NAME}`
+    REPLICA_NUM=$(get_replica_num ${OLD_NAME})
 
     set_index_readonly ${OLD_NAME}
     echo "Renaming index from ${OLD_NAME} to ${NEW_NAME} ..."

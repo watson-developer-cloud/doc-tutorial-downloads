@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: wd-migrator-job
+  name: #job-name#
   labels:
-    app.kubernetes.io/component: wd-migrator
+    app.kubernetes.io/component: wd-backup-restore
     app.kubernetes.io/instance: core
     app.kubernetes.io/name: discovery
     service: discovery
@@ -13,18 +13,17 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/component: wd-migrator
+        app.kubernetes.io/component: wd-backup-restore
         app.kubernetes.io/instance: core
         app.kubernetes.io/managed-by: Tiller
         app.kubernetes.io/name: discovery
-        helm.sh/chart: ibm-watson-discovery-core-prod
         service: discovery
     spec:
       serviceAccount: #svc-account#
       serviceAccountName: #svc-account#
       restartPolicy: Never
       containers:
-        - name: wd-migrator-job
+        - name: wd-utils-job
           image: #image#
           securityContext:
             allowPrivilegeEscalation: false

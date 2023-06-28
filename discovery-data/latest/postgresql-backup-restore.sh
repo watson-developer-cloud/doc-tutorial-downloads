@@ -47,10 +47,10 @@ SCRIPT_ARGS=${SCRIPT_ARGS:-""}
 brlog "INFO" "Postgressql: "
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
-WD_VERSION=${WD_VERSION:-`get_version`}
+WD_VERSION=${WD_VERSION:-$(get_version)}
 
 PG_ARCHIVE_OPTION="${PG_ARCHIVE_OPTION--z}"
-if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+if [ $(compare_version "${WD_VERSION}" "4.0.0") -ge 0 ] ; then
   PG_ARCHIVE_OPTION="${PG_ARCHIVE_OPTION} --exclude='${PG_BACKUP_DIR}/pg_dfs_induction.dump'"
 fi
 
@@ -63,7 +63,7 @@ VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
 ARCHIVE_ON_LOCAL=${ARCHIVE_ON_LOCAL:-false}
-BACKUP_FILE=${BACKUP_FILE:-"pg_`date "+%Y%m%d_%H%M%S"`.backup"}
+BACKUP_FILE=${BACKUP_FILE:-"pg_$(date "+%Y%m%d_%H%M%S").backup"}
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
@@ -71,13 +71,13 @@ mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
 PG_POD=""
 
-for POD in `oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper` ; do
+for POD in $(oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
   if oc logs ${OC_ARGS} --since=30s ${POD} | grep 'our db requested role is master' > /dev/null ; then
     PG_POD=${POD}
   fi
 done
 
-if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD:-false}" ; then
+if [ $(compare_version "${WD_VERSION}" 4.0.0) -ge 0 ] || "${BACKUP_RESTORE_IN_POD:-false}" ; then
   brlog "INFO" "Start ${COMMAND} postgres..."
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
   PG_BACKUP="pg_backup.tar.gz"
@@ -100,7 +100,7 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
     brlog "INFO" "Get tenant information."
     while :
     do
-      tmp_files=`fetch_cmd_result ${POD} "ls ${BACKUP_RESTORE_DIR_IN_POD}"`
+      tmp_files=$(fetch_cmd_result ${POD} "ls ${BACKUP_RESTORE_DIR_IN_POD}")
       if echo "${tmp_files}" | grep "tenants" > /dev/null ; then
         TENANT_FILE="tmp_wd_tenants_$(date "+%Y%m%d_%H%M%S").txt"
         kube_cp_to_local ${POD} "${TENANT_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/tenants" ${OC_ARGS}
@@ -113,7 +113,8 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
   fi
   while :
   do
-    if fetch_cmd_result ${POD} 'ls /tmp' | grep "backup-restore-complete" > /dev/null ; then
+    ls_tmp=$(fetch_cmd_result ${POD} 'ls /tmp') 
+    if echo "${ls_tmp}" | grep "backup-restore-complete" > /dev/null ; then
       brlog "INFO" "Completed ${COMMAND} job"
       break;
     else
@@ -124,7 +125,7 @@ if [ `compare_version "${WD_VERSION}" 4.0.0` -ge 0 ] || "${BACKUP_RESTORE_IN_POD
   if [ "${COMMAND}" = "backup" ] ; then
     brlog "INFO" "Transferring backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${PG_BACKUP}" ${OC_ARGS}
-    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${PG_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${PG_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
       brlog "ERROR" "Backup file is broken, or does not exist."
       oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
       exit 1
@@ -161,7 +162,7 @@ if [ ${COMMAND} = 'backup' ] ; then
     kube_cp_to_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR}"
     brlog "INFO" "Archiving data"
-    tar ${PG_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} ${PG_BACKUP_DIR}
+    tar "${PG_TAR_OPTIONS[@]}" -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} ${PG_BACKUP_DIR}
   else
     brlog "INFO" "Archiving data..."
     run_cmd_in_pod ${PG_POD} "tar ${PG_ARCHIVE_OPTION} -cf ${PG_BACKUP} -C /tmp ${PG_BACKUP_DIR} && rm -rf /tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
@@ -169,7 +170,7 @@ if [ ${COMMAND} = 'backup' ] ; then
     kube_cp_to_local ${PG_POD} "${BACKUP_FILE}" "${PG_BACKUP}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${PG_POD} -- bash -c "rm -rf /tmp/${PG_BACKUP_DIR} ${PG_BACKUP}"
   fi
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${PG_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${PG_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -208,7 +209,7 @@ if [ ${COMMAND} = 'restore' ] ; then
 
   if "${ARCHIVE_ON_LOCAL}" ; then
     brlog "INFO" "Extracting archive"
-    tar ${PG_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
+    tar "${PG_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
     brlog "INFO" "Transferring backup files"
     kube_cp_from_local -r ${PG_POD} "${TMP_WORK_DIR}/${PG_BACKUP_DIR}" "/tmp/${PG_BACKUP_DIR}" ${OC_ARGS}
   else

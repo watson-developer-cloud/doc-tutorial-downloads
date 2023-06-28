@@ -59,10 +59,10 @@ do
   fi
 done
 
-WD_VERSION=${WD_VERSION:-`get_version`}
+WD_VERSION=${WD_VERSION:-$(get_version)}
 PG_POD=""
 
-if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+if [ $(compare_version "${WD_VERSION}" "4.0.0") -ge 0 ] ; then
   PG_JOB_TEMPLATE="${SCRIPT_DIR}/src/backup-restore-job-template.yml"
   PG_JOB_FILE="${SCRIPT_DIR}/src/pg-backup-restore-job.yml"
   PG_BACKUP_RESTORE_JOB="wd-discovery-postgres-backup-restore"
@@ -78,8 +78,8 @@ if require_tenant_backup ; then
 
   brlog "INFO" "Restore tenants information"
 
-  for tenants_file in `ls -t tmp_wd_tenants_*.txt` ; do
-    if [ -n "`cat ${tenants_file}`" ] ; then
+  for tenants_file in $(ls -t tmp_wd_tenants_*.txt) ; do
+    if [ -n "$(cat ${tenants_file})" ] ; then
       kube_cp_from_local ${PG_POD} "${tenants_file}" "/tmp/tenants" ${OC_ARGS}
       fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
         export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
@@ -98,7 +98,7 @@ fi
 ## End restore tenants
 
 ## Set default as tenant ID
-if [ `compare_version "${WD_VERSION}" "2.2.1"` -ge 0 ] && [ `compare_version "${WD_VERSION}" "4.0.5"` -le 0 ] && [ `compare_version "${BACKUP_FILE_VERSION}" "2.2.0"` -le 0 ] ; then
+if [ $(compare_version "${WD_VERSION}" "2.2.1") -ge 0 ] && [ $(compare_version "${WD_VERSION}" "4.0.5") -le 0 ] && [ $(compare_version "${BACKUP_FILE_VERSION}" "2.2.0") -le 0 ] ; then
   brlog "INFO" "Update tenant id to default"
   fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} && \
       export PGPASSWORD=${PGPASSWORD:-$STKEEPER_PG_SU_PASSWORD} && \
@@ -121,7 +121,7 @@ fetch_cmd_result ${PG_POD} 'export PGUSER=${PGUSER:-$STKEEPER_PG_SU_USERNAME} &&
 
 ## End update ranker
 
-if [ `compare_version "${WD_VERSION}" "4.0.0"` -ge 0 ] ; then
+if [ $(compare_version "${WD_VERSION}" "4.0.0") -ge 0 ] ; then
   oc ${OC_ARGS} delete -f $PG_JOB_FILE
 fi
 
