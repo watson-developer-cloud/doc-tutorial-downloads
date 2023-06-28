@@ -11,13 +11,12 @@ OC_ARGS="${OC_ARGS:-}"
 MINIO_BACKUP="minio_backup.tar.gz"
 MINIO_BACKUP_DIR="${MINIO_BACKUP_DIR:-minio_backup}"
 TMP_WORK_DIR="tmp/minio_workspace"
-MINIO_JOB_FILE="${SCRIPT_DIR}/src/minio-backup-restore-job.yml"
 BACKUP_RESTORE_IN_POD=${BACKUP_RESTORE_IN_POD-false}
 CURRENT_COMPONENT="minio"
 MINIO_ELASTIC_BACKUP=${MINIO_ELASTIC_BACKUP:-false}
 DISABLE_MC_MULTIPART=${DISABLE_MC_MULTIPART:-true}
 ELASTIC_BACKUP_BUCKET="elastic-backup"
-SED_REG_OPT="`get_sed_reg_opt`"
+SED_REG_OPT="$(get_sed_reg_opt)"
 SCRIPT_DIR=${SCRIPT_DIR}
 
 printUsage() {
@@ -44,7 +43,7 @@ done
 brlog "INFO" "MinIO:"
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
-BACKUP_FILE=${BACKUP_FILE:-"minio_`date "+%Y%m%d_%H%M%S"`.tar.gz"}
+BACKUP_FILE=${BACKUP_FILE:-"minio_$(date "+%Y%m%d_%H%M%S").tar.gz"}
 
 MINIO_ARCHIVE_OPTION="${MINIO_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
 if [ -n "${MINIO_ARCHIVE_OPTION}" ] ; then
@@ -55,7 +54,7 @@ fi
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
-setup_minio_env
+setup_s3_env
 
 rm -rf ${TMP_WORK_DIR}
 
@@ -64,7 +63,7 @@ mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 
 if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
-  launch_minio_pod
+  launch_s3_pod
   _oc_cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
   _oc_cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
   _oc_cp "${SCRIPT_DIR}/src/minio-backup-restore-in-pod.sh" "${POD}:${BACKUP_RESTORE_DIR_IN_POD}/run.sh" ${OC_ARGS}
@@ -89,14 +88,14 @@ if "${BACKUP_RESTORE_IN_POD}" ; then
   if [ "${COMMAND}" = "backup" ] ; then
     brlog "INFO" "Transferring backup data"
     kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${MINIO_BACKUP}" ${OC_ARGS}
-    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${MINIO_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${MINIO_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
       brlog "ERROR" "Backup file is broken, or does not exist."
       oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
       exit 1
     fi
   fi
   oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
-  oc ${OC_ARGS} delete -f "${MINIO_JOB_FILE}"
+  oc ${OC_ARGS} delete -f "${S3_JOB_FILE}"
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then
     rm -rf tmp
@@ -114,32 +113,35 @@ fi
 export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
+BUCKET_SUFFIX="$(get_bucket_suffix)"
+
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
   start_minio_port_forward
-  ${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  EXCLUDE_OBJECTS=`cat "${SCRIPT_DIR}/src/minio_exclude_paths"`
-  for bucket in `${MC} ${MC_OPTS[@]} ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET}`
+  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
+  for bucket in $(${MC} "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
   do
     EXTRA_MC_MIRROR_COMMAND=""
     ORG_IFS=${IFS}
     IFS=$'\n'
     for line in ${EXCLUDE_OBJECTS}
     do
-      if [[ ${line} == ${bucket}* ]] ; then
-        if [ "${line#$bucket }" = "*" ] ; then
+      base_bucket_name=${bucket%"${BUCKET_SUFFIX}"}
+      if [[ ${line} == ${base_bucket_name}* ]] ; then
+        if [ "${line#"$base_bucket_name" }" = "*" ] ; then
           brlog "DEBUG" "SKIP ${bucket}"
           continue 2
         fi
-        EXTRA_MC_MIRROR_COMMAND="--exclude ${line#$bucket } ${EXTRA_MC_MIRROR_COMMAND}"
+        EXTRA_MC_MIRROR_COMMAND="--exclude ${line#"${base_bucket_name}" } ${EXTRA_MC_MIRROR_COMMAND}"
       fi
     done
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
     set +e
-    ${MC} ${MC_OPTS[@]} --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    ${MC} "${MC_OPTS[@]}" --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     RC=$?
     echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     if [ $RC -ne 0 ] ; then
@@ -151,8 +153,8 @@ if [ "${COMMAND}" = "backup" ] ; then
   done
   stop_minio_port_forward
   brlog "INFO" "Archiving data..."
-  tar ${MINIO_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${MINIO_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+  tar "${MINIO_TAR_OPTIONS[@]}" -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR} .
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${MINIO_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -172,21 +174,26 @@ if [ "${COMMAND}" = "restore" ] ; then
   fi
   brlog "INFO" "Start restore minio: ${BACKUP_FILE}"
   brlog "INFO" "Extracting archive..."
-  tar ${MINIO_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
+  tar "${MINIO_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   brlog "INFO" "Restoring data..."
   start_minio_port_forward
-  ${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${MINIO_ENDPOINT_URL} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} > /dev/null
-  for bucket in `ls ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}`
+  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  for bucket_path in "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"/*
   do
-    if ${MC} ${MC_OPTS[@]} ls wdminio | grep ${bucket} > /dev/null ; then
-      if [ -n "`${MC} ${MC_OPTS[@]} ls wdminio/${bucket}/`" ] ; then
-        ${MC} ${MC_OPTS[@]} --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
+    bucket="$(basename "${bucket_path}")"
+    if [ -n "${BUCKET_SUFFIX}" ] && [[ "${bucket}" != *"${BUCKET_SUFFIX}"  ]] ; then
+      mv "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}" "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}${BUCKET_SUFFIX}"
+      bucket="${bucket}${BUCKET_SUFFIX}"
+    fi
+    if ${MC} "${MC_OPTS[@]}" ls wdminio | grep ${bucket} > /dev/null ; then
+      if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${bucket}/)" ] ; then
+        ${MC} "${MC_OPTS[@]}" --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
       fi
       if [ "${bucket}" = "discovery-dfs" ] ; then
         continue
       fi
       set +e
-      ${MC} ${MC_OPTS[@]} --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      ${MC} "${MC_OPTS[@]}" --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
       RC=$?
       echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
       if [ $RC -ne 0 ] ; then
@@ -198,6 +205,8 @@ if [ "${COMMAND}" = "restore" ] ; then
   done
   stop_minio_port_forward
   brlog "INFO" "Done"
+  brlog "INFO" "Restart setup jobs"
+  restart_job "enrichment-model-copy orchestrator-setup"
   brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   minio_updates

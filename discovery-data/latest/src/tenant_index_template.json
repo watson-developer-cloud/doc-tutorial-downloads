@@ -235,7 +235,7 @@
           }
         }
       },
-      "number_of_replicas": "1",
+      "number_of_replicas": "#replica_size#",
       "languagecode": "en",
       "number_of_shards": "1",
       "routing_partition_size": "1"

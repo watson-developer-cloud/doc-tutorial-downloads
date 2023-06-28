@@ -53,24 +53,24 @@ mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 
 # backup wddata
 if [ ${COMMAND} = 'backup' ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"wddata_`date "+%Y%m%d_%H%M%S"`.backup"}
+  BACKUP_FILE=${BACKUP_FILE:-"wddata_$(date "+%Y%m%d_%H%M%S").backup"}
   brlog "INFO" "Start backup wddata..."
-  CK_SECRET=`oc get ${OC_ARGS} secret -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},app=ck-secret`
-  OK=`oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.OK}}' | base64 --decode`
-  CK=`oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.CK}}' | base64 --decode`
-  PASSWORD=`oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.Password}}' | base64 --decode`
+  CK_SECRET=$(oc get ${OC_ARGS} secret -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},app=ck-secret)
+  OK=$(oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.OK}}' | base64 --decode)
+  CK=$(oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.CK}}' | base64 --decode)
+  PASSWORD=$(oc get ${OC_ARGS} secret ${CK_SECRET} --template '{{.data.Password}}' | base64 --decode)
   mkdir -p ${TMP_WORK_DIR}/wexdata/config/certs
   cat <<EOF > ${TMP_WORK_DIR}/wexdata/config/certs/crawler.ini
 OK=${OK}
 CK=${CK}
 Password=${PASSWORD}
 EOF
-  tar ${WDDATA_TAR_OPTIONS[@]} -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} wexdata
+  tar "${WDDATA_TAR_OPTIONS[@]}" -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR} wexdata
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then
     rm -rf tmp
   fi
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${WDDATA_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${WDDATA_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -90,7 +90,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   fi
   brlog "INFO" "Start restore wddata: ${BACKUP_FILE}"
   mkdir -p ${TMP_WORK_DIR}
-  tar ${WDDATA_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
+  tar "${WDDATA_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}
   ${SCRIPT_DIR}/src/update-ingestion-conf.sh ${TENANT_NAME} ${TMP_WORK_DIR}/wexdata ${BACKUP_ARG}
   rm -rf ${TMP_WORK_DIR}
   if [ -z "$(ls tmp)" ] ; then

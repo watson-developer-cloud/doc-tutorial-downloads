@@ -51,13 +51,13 @@ rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 
-wd_version=${WD_VERSION:-`get_version`}
+wd_version=${WD_VERSION:-$(get_version)}
 
 setup_etcd_env
 
 # backup etcd
 if [ ${COMMAND} = 'backup' ] ; then
-  BACKUP_FILE=${BACKUP_FILE:-"etcd_snapshot_`date "+%Y%m%d_%H%M%S"`.db"}
+  BACKUP_FILE=${BACKUP_FILE:-"etcd_snapshot_$(date "+%Y%m%d_%H%M%S").db"}
   brlog "INFO" "Start backup etcd..."
   run_cmd_in_pod ${ETCD_POD} "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP} && \
   mkdir -p ${ETCD_BACKUP_DIR} && \
@@ -70,11 +70,11 @@ if [ ${COMMAND} = 'backup' ] ; then
 
   if "${ARCHIVE_ON_LOCAL}" ; then 
     brlog "INFO" "Transferring backup files"
-    mkdir -p "`dirname ${TMP_WORK_DIR}${ETCD_BACKUP_DIR}`"
+    mkdir -p "$(dirname ${TMP_WORK_DIR}${ETCD_BACKUP_DIR})"
     kube_cp_to_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${ETCD_POD} -- bash -c "rm -rf ${ETCD_BACKUP_DIR}"
     brlog "INFO" "Archiving data"
-    tar ${ETCD_TAR_OPTIONS[@]} -cf "${BACKUP_FILE}" -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" .
+    tar "${ETCD_TAR_OPTIONS[@]}" -cf "${BACKUP_FILE}" -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" .
   else
     brlog "INFO" "Archiving data..."
     run_cmd_in_pod ${ETCD_POD} "tar ${ETCD_ARCHIVE_OPTION} -cf ${ETCD_BACKUP} -C ${ETCD_BACKUP_DIR} ." ${OC_ARGS}
@@ -82,7 +82,7 @@ if [ ${COMMAND} = 'backup' ] ; then
     kube_cp_to_local ${ETCD_POD} "${BACKUP_FILE}" "${ETCD_BACKUP}" ${OC_ARGS}
     oc ${OC_ARGS} exec ${ETCD_POD} --  bash -c "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP}"
   fi
-  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar ${ETCD_TAR_OPTIONS[@]} -tf ${BACKUP_FILE} &> /dev/null ; then
+  if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${ETCD_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
     brlog "ERROR" "Backup file is broken, or does not exist."
     exit 1
   fi
@@ -105,7 +105,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   if "${ARCHIVE_ON_LOCAL}" ; then
     brlog "INFO" "Extracting archive"
     mkdir -p "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
-    tar ${ETCD_TAR_OPTIONS[@]} -xf ${BACKUP_FILE} -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
+    tar "${ETCD_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}"
     brlog "INFO" "Transferring backup files"
     kube_cp_from_local -r ${ETCD_POD} "${TMP_WORK_DIR}${ETCD_BACKUP_DIR}" "${ETCD_BACKUP_DIR}" ${OC_ARGS}
   else
