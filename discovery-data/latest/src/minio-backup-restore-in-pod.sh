@@ -71,7 +71,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     set +e
     while true;
     do
-      ${MC} "${MC_OPTS[@]}" --quiet mirror "${MC_MIRROR_OPTS[@]}" ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
+      ${MC} "${MC_OPTS[@]}" --quiet mirror ${MC_MIRROR_OPTS[@]} ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
       RC=$?
       echo "RC=${RC}"
       if [ $RC -eq 0 ] ; then
@@ -89,7 +89,6 @@ fi
 
 # restore
 if [ "${COMMAND}" = "restore" ] ; then
-  MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]}" "--recursive" )
   if [ -z ${MINIO_BACKUP} ] ; then
     printUsage
   fi
@@ -119,18 +118,28 @@ if [ "${COMMAND}" = "restore" ] ; then
       fi
       brlog "INFO" "    Restore ${bucket}"
       set +e
+      if [[ ${S3_ENDPOINT_URL} == *"minio"* ]] ; then
+        MC_MIRROR_OPTS=( ${MC_MIRROR_OPTS[@]} "--recursive" )
+        MC_MIRROR_COMMAND="cp"
+      else
+        MC_MIRROR_COMMAND="mirror"
+      fi
       while true;
       do
-        ${MC} "${MC_OPTS[@]}" --quiet cp "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/ wdminio/${bucket}/ 2>&1
+        ${MC} "${MC_OPTS[@]}" ${MC_MIRROR_COMMAND} --quiet ${MC_MIRROR_OPTS[@]} ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/ wdminio/${bucket}/ 2>&1
         RC=$?
         echo "RC=${RC}"
         if [ $RC -eq 0 ] ; then
-          MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]/--continue}" )
+          if [[ ${S3_ENDPOINT_URL} == *"minio"* ]] ; then
+            MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]/--continue}" )
+          fi
           break
         else
-          # Add --continue option to resume
-          if [[ ! " ${MC_MIRROR_OPTS[*]} " =~ " --continue " ]]; then
-            MC_MIRROR_OPTS+=( "--continue" )
+          if [[ ${S3_ENDPOINT_URL} == *"minio"* ]] ; then
+            # Add --continue option to resume. This is available for only MinIO.
+            if [[ ! " ${MC_MIRROR_OPTS[*]} " =~ " --continue " ]]; then
+              MC_MIRROR_OPTS+=( "--continue" )
+            fi
           fi
         fi
         brlog "WARN" "Some file could not be transfered. Retrying..."
