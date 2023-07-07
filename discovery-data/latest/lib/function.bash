@@ -1099,7 +1099,7 @@ launch_s3_pod(){
 }
 
 setup_s3_env(){
-  S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "discovery.ibm.com/component in (s3,minio),tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
+  S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "app.kubernetes.io/component in (s3,minio),tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
   S3_SVC=${S3_SVC:-$(oc extract ${OC_ARGS} configmap/${S3_CONFIGMAP} --keys=host --to=- 2> /dev/null)}
   if [[ "${S3_SVC}" == *"."* ]] ; then
     array=(${S3_SVC//./ })

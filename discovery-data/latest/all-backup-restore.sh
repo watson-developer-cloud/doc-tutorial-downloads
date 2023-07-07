@@ -477,6 +477,9 @@ if [ "${COMMAND}" = 'restore' ] ; then
       ${SCRIPT_DIR}/mt-mt-migration.sh -i ${TENANT_NAME}
     fi
   fi
+  if [ $(compare_version "${WD_VERSION}" "4.7.0") -ge 0 ] ; then
+    restart_job "enrichment-model-copy orchestrator-setup"
+  fi
 fi
 
 if ! "${SKIP_QUIESCE}" ; then
