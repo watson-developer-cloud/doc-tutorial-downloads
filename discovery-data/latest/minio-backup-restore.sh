@@ -206,7 +206,6 @@ if [ "${COMMAND}" = "restore" ] ; then
   stop_minio_port_forward
   brlog "INFO" "Done"
   brlog "INFO" "Restart setup jobs"
-  restart_job "enrichment-model-copy orchestrator-setup"
   brlog "INFO" "Applying updates"
   . ./lib/restore-updates.bash
   minio_updates
