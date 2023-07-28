@@ -478,7 +478,11 @@ if [ "${COMMAND}" = 'restore' ] ; then
     fi
   fi
   if [ $(compare_version "${WD_VERSION}" "4.7.0") -ge 0 ] ; then
-    restart_job "enrichment-model-copy orchestrator-setup"
+    restart_job_list="enrichment-model-copy orchestrator-setup"
+    if [ $(compare_version "${WD_VERSION}" "4.7.1") -ge 0 ] ; then
+      restart_job_list="${restart_job_list} sdu-db-init"
+    fi
+    restart_job "${restart_job_list}"
   fi
 fi
 
