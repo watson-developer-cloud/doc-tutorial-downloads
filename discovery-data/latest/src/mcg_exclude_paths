@@ -1,0 +1,3 @@
+# bucket paths
+common mt/__built-in-tenant__/fileResource*
+common watson_nlp_models*
