@@ -119,8 +119,10 @@ do
   CMD="psql -d dadmin -t -A -c \"SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'tenant_id' ORDER BY table_name\""
   standard_mt_tables=($(oc exec ${OC_ARGS} "${PG_POD}" -- bash -c "${CMD}"))
   echo "Updating tables with tenant_id: ${standard_mt_tables[*]}"
-  foreign_key_tables=(wd_collections wd_collections_status wd_collections_project wd_datasets_collection wd_collection_document_status wd_collections_enrichment_job_status wd_datasets wd_datasets_status wd_datasets_project wd_enrichments wd_enrichments_lang wd_enrichments_project wd_collection_stats)
-
+  foreign_key_tables=(wd_collections wd_collections_status wd_collections_project wd_datasets_collection wd_collection_document_status wd_collections_enrichment_job_status wd_datasets wd_datasets_status wd_datasets_project wd_enrichments wd_enrichments_lang wd_enrichments_project)
+  if [ $(compare_version "${WD_VERSION}" "4.7.0") -ge 0 ] ; then
+    foreign_key_tables+=( wd_collection_stats )
+  fi
   SQL="BEGIN;"
 
   for table in "${foreign_key_tables[@]}"; do

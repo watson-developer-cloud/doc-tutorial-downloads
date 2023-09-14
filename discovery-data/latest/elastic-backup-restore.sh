@@ -158,13 +158,12 @@ if "${BACKUP_RESTORE_IN_POD}" && [ $(compare_version ${WD_VERSION} "4.7.0") -lt 
   add_secret_env_to_job_yaml "S3_SECRET_KEY" "${S3_SECRET}" "secretkey" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_STATUS_CHECK_INTERVAL" "${ELASTIC_STATUS_CHECK_INTERVAL}" "${ELASTIC_JOB_FILE}"
-  add_env_to_job_yaml "ELASTIC_ARCHIVE_OPTION" "${ELASTIC_ARCHIVE_OPTION}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_WAIT_GREEN_STATE" "${ELASTIC_WAIT_GREEN_STATE}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "KEEP_SNAPSHOT" "${KEEP_SNAPSHOT}" "${ELASTIC_JOB_FILE}"
   add_env_to_job_yaml "ELASTIC_MAX_WAIT_RECOVERY_SECONDS" "${ELASTIC_MAX_WAIT_RECOVERY_SECONDS}" "${ELASTIC_JOB_FILE}"
-  add_volume_to_job_yaml "backup-restore-workspace" "${JOB_VOLUME_NAME}" "${TMP_PVC_NAME:-emptyDir}" "${ELASTIC_JOB_FILE}"
+  add_volume_to_job_yaml "backup-restore-workspace" "${TMP_PVC_NAME:-emptyDir}" "${ELASTIC_JOB_FILE}"
 
   oc ${OC_ARGS} delete -f "${ELASTIC_JOB_FILE}" &> /dev/null || true
   oc ${OC_ARGS} apply -f "${ELASTIC_JOB_FILE}"

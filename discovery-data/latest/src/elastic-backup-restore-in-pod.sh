@@ -25,9 +25,9 @@ ELASTIC_LOG="${TMP_WORK_DIR}/elastic.log"
 
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
-MC_MIRROR_OPTS=( "" )
+MC_MIRROR_OPTS=()
 if "${DISABLE_MC_MULTIPART:-true}" ; then
-  MC_MIRROR_OPTS=( "${MC_MIRROR_OPTS[@]}" --disable-multipart )
+  MC_MIRROR_OPTS+=( "--disable-multipart" )
 fi
 MC=mc
 

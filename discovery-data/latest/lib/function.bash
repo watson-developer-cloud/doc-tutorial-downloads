@@ -1080,6 +1080,7 @@ launch_s3_pod(){
   if [ -n "${MINIO_ARCHIVE_OPTION:+UNDEF}" ] ; then add_env_to_job_yaml "MINIO_ARCHIVE_OPTION" "${MINIO_ARCHIVE_OPTION}" "${S3_JOB_FILE}"; fi
   if [ -n "${DISABLE_MC_MULTIPART:+UNDEF}" ] ; then add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${S3_JOB_FILE}"; fi
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${S3_JOB_FILE}"
+  add_env_to_job_yaml "WD_VERSION" "${wd_version}" "${S3_JOB_FILE}"
   add_volume_to_job_yaml "backup-restore-workspace" "${TMP_PVC_NAME:-emptyDir}" "${S3_JOB_FILE}"
   if [ $(compare_version ${wd_version} "4.7.0") -ge 0 ] ; then
     BUCKET_SUFFIX="$(get_bucket_suffix)"

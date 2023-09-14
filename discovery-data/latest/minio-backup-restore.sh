@@ -122,9 +122,13 @@ if [ "${COMMAND}" = "backup" ] ; then
   start_minio_port_forward
   ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
+  if [ $(compare_version "$(get_version)" "4.7.0") -ge 0 ] ; then
+    EXCLUDE_OBJECTS+=$'\n'
+    EXCLUDE_OBJECTS+="$(cat "${SCRIPT_DIR}/src/mcg_exclude_paths")"
+  fi
   for bucket in $(${MC} "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
   do
-    EXTRA_MC_MIRROR_COMMAND=""
+    EXTRA_MC_MIRROR_COMMAND=()
     ORG_IFS=${IFS}
     IFS=$'\n'
     for line in ${EXCLUDE_OBJECTS}
@@ -135,13 +139,13 @@ if [ "${COMMAND}" = "backup" ] ; then
           brlog "DEBUG" "SKIP ${bucket}"
           continue 2
         fi
-        EXTRA_MC_MIRROR_COMMAND="--exclude ${line#"${base_bucket_name}" } ${EXTRA_MC_MIRROR_COMMAND}"
+        EXTRA_MC_MIRROR_COMMAND+=( "--exclude" "${line#"$base_bucket_name" }" )
       fi
     done
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
     set +e
-    ${MC} "${MC_OPTS[@]}" --quiet mirror ${EXTRA_MC_MIRROR_COMMAND} wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    ${MC} "${MC_OPTS[@]}" --quiet mirror "${EXTRA_MC_MIRROR_COMMAND[@]}" wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     RC=$?
     echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     if [ $RC -ne 0 ] ; then
