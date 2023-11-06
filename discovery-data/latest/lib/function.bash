@@ -1100,7 +1100,14 @@ launch_s3_pod(){
 }
 
 setup_s3_env(){
-  S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "app.kubernetes.io/component in (s3,minio),tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
+  local wd_version="${WD_VERSION:-$(get_version)}"
+  if [ $(compare_version "${wd_version}" "4.7.0") -lt 0 ] ; then
+    S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "app.kubernetes.io/component=minio,tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
+    S3_SECRET=${S3_SECRET:-$(oc ${OC_ARGS} get secret -l "tenant=${TENANT_NAME},run=minio-auth" -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep minio)}
+  else
+    S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "app.kubernetes.io/component=s3,tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
+    S3_SECRET=${S3_SECRET:-$(oc ${OC_ARGS} get secret -l "tenant=${TENANT_NAME},run=s3-auth" -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep s3)}
+  fi
   S3_SVC=${S3_SVC:-$(oc extract ${OC_ARGS} configmap/${S3_CONFIGMAP} --keys=host --to=- 2> /dev/null)}
   if [[ "${S3_SVC}" == *"."* ]] ; then
     array=(${S3_SVC//./ })
@@ -1110,7 +1117,6 @@ setup_s3_env(){
     S3_PORT_FORWARD_SVC=${S3_SVC}
   fi
   S3_PORT=${S3_PORT:-$(oc extract ${OC_ARGS} configmap/${S3_CONFIGMAP} --keys=port --to=- 2> /dev/null)}
-  S3_SECRET=${S3_SECRET:-$(oc ${OC_ARGS} get secret -l "tenant=${TENANT_NAME},run in (s3-auth,minio-auth)" -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep -e minio -e s3)}
   S3_ACCESS_KEY=${S3_ACCESS_KEY:-$(oc get ${OC_ARGS} secret ${S3_SECRET} --template '{{.data.accesskey}}' | base64 --decode)}
   S3_SECRET_KEY=${S3_SECRET_KEY:-$(oc get ${OC_ARGS} secret ${S3_SECRET} --template '{{.data.secretkey}}' | base64 --decode)}
   S3_FORWARD_PORT=${S3_FORWARD_PORT:-39001}
