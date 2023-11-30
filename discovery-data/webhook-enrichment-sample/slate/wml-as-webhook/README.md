@@ -64,16 +64,16 @@ SCORING_API_TOKEN=$(
    ```bash
    curl -X POST {auth} \
    --header 'Content-Type: multipart/form-data' \
-   --form 'enrichment={"name":"my-first-webhook-enrichment", \
-     "type":"webhook", \
-     "options":{"url":"{your_code_engine_app_domain}/webhook", \
-       "headers":[
+   --form 'enrichment={"name":"my-first-webhook-enrichment",
+   "type":"webhook",
+   "options":{"url":"{your_code_engine_app_domain}/webhook",
+      "headers":[
          {
             "name": "Authorization",
             "value": "Bearer {SCORING_API_TOKEN}"
          }
-       ], \
-       "location_encoding":"utf-32"}}' \
+      ],
+      "location_encoding":"utf-32"}}' \
    '{url}/v2/projects/{project_id}/enrichments?version=2023-03-31'
    ```
 4. Create a collection in the project and apply the webhook enrichment to the collection.
