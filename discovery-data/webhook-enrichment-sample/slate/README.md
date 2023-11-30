@@ -50,7 +50,7 @@ In this tutorial, we will use [IBM Cloud Code Engine](https://www.ibm.com/cloud/
 ```shell
 SCORING_API_TOKEN=$(
   curl -k -X POST 'https://{hostname of your cp4d instance}/icp4d-api/v1/authorize' \
-                  --header "Content-Type: application/json"
+                  --header "Content-Type: application/json" \
                   -d "{\"username\":\"admin\",\"api_key\":\"{api key of your cp4d instance}\"}" \
   | jq .token
 )
