@@ -50,7 +50,7 @@ In this tutorial, we will use [IBM Cloud Code Engine](https://www.ibm.com/cloud/
 ```shell
 SCORING_API_TOKEN=$(
   curl -k -X POST 'https://{hostname of your cp4d instance}/icp4d-api/v1/authorize' \
-                  --header "Content-Type: application/json" 
+                  --header "Content-Type: application/json" \
                   -d "{\"username\":\"admin\",\"api_key\":\"{api key of your cp4d instance}\"}" \
   | jq .token
 )
@@ -58,10 +58,10 @@ SCORING_API_TOKEN=$(
 3. [Deploy the application](https://cloud.ibm.com/docs/codeengine?topic=codeengine-app-source-code) from this repository source code.
    - In **Create application**, click **Specify build details** and enter the following:
       - Source
-         - Code repo URL: **TODO: public URL of this repository. https://github.com/watson-developer-cloud/discovery-webhook-enrichment ...?**
+         - Code repo URL: `https://github.com/watson-developer-cloud/doc-tutorial-downloads`
          - Code repo access: `None`
-         - Branch name: `main`
-         - Context directory: `slate/app`
+         - Branch name: `master`
+         - Context directory: `discovery-data/webhook-enrichment-sample/slate/app`
       - Strategy
          - Strategy: `Dockerfile`
       - Output

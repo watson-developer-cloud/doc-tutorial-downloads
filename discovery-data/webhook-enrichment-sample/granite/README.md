@@ -23,10 +23,10 @@ In this tutorial, we will use [IBM Cloud Code Engine](https://www.ibm.com/cloud/
 3. [Deploy the application](https://cloud.ibm.com/docs/codeengine?topic=codeengine-app-source-code) from this repository source code.
    - In **Create application**, click **Specify build details** and enter the following:
       - Source
-         - Code repo URL: **TODO: public URL of this repository. https://github.com/watson-developer-cloud/discovery-webhook-enrichment ...?**
+         - Code repo URL: `https://github.com/watson-developer-cloud/doc-tutorial-downloads`
          - Code repo access: `None`
-         - Branch name: `main`
-         - Context directory: `granite`
+         - Branch name: `master`
+         - Context directory: `discovery-data/webhook-enrichment-sample/granite`
       - Strategy
          - Strategy: `Dockerfile`
       - Output
