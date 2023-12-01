@@ -1206,12 +1206,11 @@ setup_zen_core_service_connection(){
   ZEN_CORE_SERVICE=${ZEN_CORE_SERVICE:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].metadata.name}')}
   ZEN_CORE_PORT=${ZEN_CORE_PORT:-$(oc get ${OC_ARGS} svc -l component=zen-core-api -o jsonpath='{.items[0].spec.ports[?(@.name=="zencoreapi-tls")].port}')}
   ZEN_CORE_API_ENDPOINT="https://${ZEN_CORE_SERVICE}:${ZEN_CORE_PORT}"
-  ZEN_CORE_UID=${ZEN_CORE_UID:-"1000330999"}
-  ZEN_CORE_TOKEN=${ZEN_CORE_TOKEN:-"$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"}
+  ZEN_CORE_TOKEN="${ZEN_CORE_TOKEN:-"$(oc get ${OC_ARGS} secret zen-service-broker-secret --template '{{.data.token}}' | base64 --decode)"}"
   ZEN_INSTANCE_TYPE="discovery"
   ZEN_PROVISION_STATUS="PROVISIONED"
-  WATSON_GATEWAY_SERVICE=${WATSON_GATEWAY_SERVICE:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].metadata.name}')"}
-  WATSON_GATEWAY_PORT=${WATSON_GATEWAY_PORT:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].spec.ports[?(@.name=="https")].port}')"}
+  WATSON_GATEWAY_SERVICE="${WATSON_GATEWAY_SERVICE:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].metadata.name}')"}"
+  WATSON_GATEWAY_PORT="${WATSON_GATEWAY_PORT:-"$(oc get ${OC_ARGS} svc -l release=${TENANT_NAME}-discovery-watson-gateway -o jsonpath='{.items[0].spec.ports[?(@.name=="https")].port}')"}"
   WATSON_GATEWAY_ENDPOINT="https://${WATSON_GATEWAY_SERVICE}:${WATSON_GATEWAY_PORT}"
 }
 
@@ -1221,7 +1220,7 @@ create_backup_instance_mappings(){
   local wd_version="${WD_VERSION:-$(get_version)}"
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
-  token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks ${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_CORE_UID} -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
   if [ $(compare_version ${wd_version} "4.0.9") -le 0 ] ; then
     mappings=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v2/serviceInstance' -H 'Authorization: Bearer ${token}' | jq -r '.requestObj[] | select(.ServiceInstanceType == \"discovery\" and .ProvisionStatus == \"PROVISIONED\") | { \"display_name\": .ServiceInstanceDisplayName, \"source_instance_id\": .CreateArguments.metadata.instanceId, \"dest_instance_id\": \"<new_instance_id>\"}' | jq -s '{\"instance_mappings\": .}'" -c elasticsearch)
   else
@@ -1243,7 +1242,7 @@ create_restore_instance_mappings(){
   setup_zen_core_service_connection
   ELASTIC_POD=$(get_elastic_pod)
   _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c elasticsearch
-  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
   local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'" -c elasticsearch)
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     brlog "INFO" "Discovery instances exist. Check if they are same instance."
@@ -1345,7 +1344,7 @@ require_tenant_backup(){
 check_instance_exists(){
   setup_zen_core_service_connection
   ELASTIC_POD=${ELASTIC_POD:-$(get_elastic_pod)}
-  local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
+  local token="$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)"
   local service_instances=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'" -c elasticsearch)
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     return 0
@@ -1369,15 +1368,21 @@ create_service_instance(){
     "${template}" > "${request_file}"
   _oc_cp "${request_file}" "${ELASTIC_POD}:/tmp/request.json" -c elasticsearch
   if [ -z "${ZEN_USER_NAME+UNDEF}" ] ; then
-    brlog "WARN" "'--cp4d-user-name' option is not provided. Use 'admin' as a user to create Discovery instance" >&2
-    ZEN_USER_NAME="admin"
-    ZEN_UID=${ZEN_CORE_UID}
+    brlog "WARN" "'--cp4d-user-name' option is not provided. Use default admin user to create Discovery instance" >&2
+    iam_secret="$(oc get ${OC_ARGS} secret/ibm-iam-bindinfo-platform-auth-idp-credentials --ignore-not-found -o jsonpath='{.metadata.name}')"
+    if [ -n "${iam_secret}" ] ; then
+      ZEN_USER_NAME="$(oc extract secret/ibm-iam-bindinfo-platform-auth-idp-credentials --to=- --keys=admin_username 2> /dev/null)"
+    else
+      ZEN_USER_NAME="admin"
+      ZEN_UID="1000330999"
+    fi
   fi
   if [ -z "${ZEN_UID+UNDEF}" ] ; then
-    brlog "WARN" "'--cp4d-user-id' option is not provided. Use 'admin' as a user to create Discovery instance" >&2
-    ZEN_USER_NAME="admin"
-    ZEN_UID=${ZEN_CORE_UID}
+    brlog "INFO" "Get CP4D user ID for ${ZEN_USER_NAME}" >&2
+    token="$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)"
+    ZEN_UID="$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/openapi/v1/users/${ZEN_USER_NAME}' -H 'Authorization: Bearer ${token}' | jq -r '.UserInfo.uid'" -c elasticsearch)"
   fi
+  brlog "INFO" "Create Discovery instance as ${ZEN_USER_NAME}:${ZEN_UID}" >&2
   local token=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_UID}&username=${ZEN_USER_NAME}&display_name=${ZEN_USER_NAME}' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token" -c elasticsearch)
   local instance_id=$(fetch_cmd_result ${ELASTIC_POD} "curl -ks -X POST '${WATSON_GATEWAY_ENDPOINT}/api/ibmcloud/resource-controller/resource_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r 'if .zen_id == null or .zen_id == \"\" then \"null\" else .zen_id end'" -c elasticsearch)
   if [ "${instance_id}" != "null" ] ; then
@@ -1420,13 +1425,17 @@ EOF
 
 get_oc_token(){
   local service_account="$1"
-  # OCP 4.12 doesn't automatically link token to ServiceAccount so instead use secret annotations
-  local token_secret=$(oc ${OC_ARGS} get secrets -o jsonpath='{range .items[?(@.metadata.annotations.kubernetes\.io\/service\-account\.name=="'"${service_account}"'")]}{.metadata.name}{"\n"}{end}' | grep -m1 'token')
-  if [ -z "${token_secret}" ]; then
-    brlog "ERROR" "Failed to find token in Service Account ${service_account}" >&2
-    return 1
+  if [ $(compare_version "$(get_version)" "4.8.0") -ge 0 ] ; then
+    oc ${OC_ARGS} create token ${service_account} --duration "${SA_TOKEN_DURATION:-168h}"
+  else
+    # OCP 4.12 doesn't automatically link token to ServiceAccount so instead use secret annotations
+    local token_secret=$(oc ${OC_ARGS} get secrets -o jsonpath='{range .items[?(@.metadata.annotations.kubernetes\.io\/service\-account\.name=="'"${service_account}"'")]}{.metadata.name}{"\n"}{end}' | grep -m1 'token')
+    if [ -z "${token_secret}" ]; then
+      brlog "ERROR" "Failed to find token in Service Account ${service_account}" >&2
+      return 1
+    fi
+    oc ${OC_ARGS} extract secret/${token_secret} --keys=token --to=-
   fi
-  oc ${OC_ARGS} extract secret/${token_secret} --keys=token --to=-
 }
 
 delete_service_account(){
