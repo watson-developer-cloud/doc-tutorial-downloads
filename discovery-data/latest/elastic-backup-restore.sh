@@ -321,7 +321,7 @@ EOF
         stop_minio_port_forward
         echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
         if [ $RC -eq 0 ] ; then
-          brlog "INFO" "Archiving snapshot..."
+          brlog "INFO" "Archiving sanpshot..."
           tar "${ELASTIC_TAR_OPTIONS[@]}" -cf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH} .
         else
           brlog "ERROR" "Some files could not be transfered. Consider to use '--use-job' and '--pvc' option. Please see help (--help) for details."
