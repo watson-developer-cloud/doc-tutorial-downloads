@@ -4,7 +4,7 @@ set -e
 
 BACKUP_DIR="tmp"
 TMP_WORK_DIR="tmp/all_backup"
-SPLITE_DIR=./tmp_split_bakcup
+SPLIT_DIR=./tmp_split_backup
 EXTRA_OC_ARGS="${EXTRA_OC_ARGS:-}"
 
 SCRIPT_DIR=$(dirname $0)
@@ -23,12 +23,12 @@ Usage:
 
 Options:
     --help, -h                                 Show help
-    --file, -f                                 Speccify backup file
+    --file, -f                                 Specify backup file
     --mapping, -m <mapping_file>               Specify mapping file for restore to multi tenant clusters
     --instance-name, -i <instance_name>        Instance name for a new Discovery instance. This name will be used if there is no Discovery instance when restore backup of Discovery 4.0.5 or older
     --cp4d-user-id <user_id>                   User ID to create Discovery instance. Default: admin user ID.
     --cp4d-user-name <user_name>               User name to create Discovery instance. Default: admin.
-    --log-output-dir <directory_path>          Specify outout direcotry of detailed component logs
+    --log-output-dir <directory_path>          Specify output directory of detailed component logs
     --continue-from <component_name>           Resume backup or restore from specified component. Values: wddata, etcd, postgresql, elastic, minio, archive, migration, post-restore
     --quiesce-on-error=[true|false]            If true, not unquiesce on error during backup or restore. Default false on backup, true on restore.
     --clean                                    Remove existing tmp directory before start backup or restore.
@@ -38,8 +38,8 @@ Basically, you don't need these advanced options.
 
     --archive-on-local                         Archive the backup files of etcd and postgresql on local machine. Use this flag to reduce the disk usage on their pod or compress the files with specified option, but it might take much time.
     --backup-archive-option="<tar_option>"     Tar options for compression used on archiving the backup file. Default none.
-    --datastore-archive-option="<tar_option>"  Tar options for comporession used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
-    --postgresql-archive-option="<tar_option>" Tar options for comporession used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
+    --datastore-archive-option="<tar_option>"  Tar options for compression used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
+    --postgresql-archive-option="<tar_option>" Tar options for compression used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
     --etcd-archive-option="<tar_option>"       Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
     --skip-verify-archive                      Skip the all verifying process of the archive.
     --skip-verify-backup                       Skip verifying the backup file.
@@ -335,11 +335,11 @@ if [ -z "${CONTINUE_FROM_COMPONENT+UNDEF}" ] && [ -d "${BACKUP_DIR}" ] ; then
   fi
 fi
 
-if [ -d "${SPLITE_DIR}" ] ; then
+if [ -d "${SPLIT_DIR}" ] ; then
   if "${CLEAN}" ; then
-    rm -rf "${SPLITE_DIR}"
+    rm -rf "${SPLIT_DIR}"
   else
-    brlog "ERROR" "Please remove ${SPLITE_DIR}"
+    brlog "ERROR" "Please remove ${SPLIT_DIR}"
     exit 1
   fi
 fi
