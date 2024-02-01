@@ -99,7 +99,7 @@ validate_version(){
   VERSIONS=(${SCRIPT_VERSION//./ })
   VERSION="${VERSIONS[0]}.${VERSIONS[1]}.${VERSIONS[2]}"
   if [ $(compare_version "${VERSION}" "${WD_VERSION}") -lt 0 ] ; then
-    brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Doscovery '${WD_VERSION}' "
+    brlog "ERROR" "Invalid script version. The version of scripts '${SCRIPT_VERSION}' is not valid for the version of Watson Discovery '${WD_VERSION}' "
     exit 1
   fi
 }
@@ -223,8 +223,8 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
@@ -252,15 +252,15 @@ kube_cp_from_local(){
 
   STAT_CMD="$(get_stat_command) ${LOCAL_BACKUP}"
   LOCAL_SIZE=$(eval "${STAT_CMD}")
-  if [ ${SPLITE_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    split -a 5 -b ${SPLITE_SIZE} ${LOCAL_BACKUP} ${SPLITE_DIR}/${LOCAL_BASE_NAME}.split.
-    for splitfile in ${SPLITE_DIR}/*; do
+  if [ ${SPLIT_SIZE} -ne 0 -a ${LOCAL_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    split -a 5 -b ${SPLIT_SIZE} ${LOCAL_BACKUP} ${SPLIT_DIR}/${LOCAL_BASE_NAME}.split.
+    for splitfile in ${SPLIT_DIR}/*; do
       FILE_BASE_NAME=$(basename "${splitfile}")
       _oc_cp "${splitfile}" "${POD}:${POD_DIST_DIR}/${FILE_BASE_NAME}" $@
     done
-    rm -rf ${SPLITE_DIR}
+    rm -rf ${SPLIT_DIR}
     run_cmd_in_pod ${POD} "cat ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.* > ${POD_BACKUP} && rm -rf ${POD_DIST_DIR}/${LOCAL_BASE_NAME}.split.*" $@
   else
     _oc_cp "${LOCAL_BACKUP}" "${POD}:${POD_BACKUP}" $@
@@ -279,8 +279,8 @@ kube_cp_to_local(){
   shift
   POD_BACKUP=$1
   shift
-  SPLITE_DIR=./tmp_split_bakcup
-  SPLITE_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
+  SPLIT_DIR=./tmp_split_backup
+  SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
 
   if "${IS_RECURSIVE}" ; then
@@ -308,17 +308,17 @@ kube_cp_to_local(){
   fi
 
   POD_SIZE=$(oc $@ exec ${POD} -- sh -c "stat -c "%s" ${POD_BACKUP}")
-  if [ ${SPLITE_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLITE_SIZE} ] ; then
-    rm -rf ${SPLITE_DIR}
-    mkdir -p ${SPLITE_DIR}
-    run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLITE_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
+  if [ ${SPLIT_SIZE} -ne 0 -a ${POD_SIZE} -gt ${SPLIT_SIZE} ] ; then
+    rm -rf ${SPLIT_DIR}
+    mkdir -p ${SPLIT_DIR}
+    run_cmd_in_pod ${POD} "split -d -a 5 -b ${SPLIT_SIZE} ${POD_BACKUP} ${POD_BACKUP}.split." $@
     FILE_LIST=$(oc exec $@ ${POD} -- sh -c "ls ${POD_BACKUP}.split.*")
     for splitfile in ${FILE_LIST} ; do
       FILE_BASE_NAME=$(basename "${splitfile}")
-      _oc_cp "${POD}:${splitfile}" "${SPLITE_DIR}/${FILE_BASE_NAME}" $@
+      _oc_cp "${POD}:${splitfile}" "${SPLIT_DIR}/${FILE_BASE_NAME}" $@
     done
-    cat ${SPLITE_DIR}/* > ${LOCAL_BACKUP}
-    rm -rf ${SPLITE_DIR}
+    cat ${SPLIT_DIR}/* > ${LOCAL_BACKUP}
+    rm -rf ${SPLIT_DIR}
     oc exec $@ ${POD} -- bash -c "rm -rf ${POD_BACKUP}.split.*"
   else
     _oc_cp "${POD}:${POD_BACKUP}" "${LOCAL_BACKUP}" $@
@@ -396,9 +396,9 @@ keep_minio_port_forward(){
   while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ]
   do
     if [ -n "${S3_NAMESPACE+UNDEF}" ] ; then
-      oc ${OC_ARGS} -n "${S3_NAMESPACE}" port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-foward.log" &
+      oc ${OC_ARGS} -n "${S3_NAMESPACE}" port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-forward.log" &
     else
-      oc ${OC_ARGS} port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-foward.log" &
+      oc ${OC_ARGS} port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-forward.log" &
     fi
     PORT_FORWARD_PID=$!
     while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ] && kill -0 ${PORT_FORWARD_PID} &> /dev/null
@@ -763,7 +763,7 @@ EOF
   files=$(fetch_cmd_result ${pod} "ls /tmp" $@)
   if echo "${files}" | grep "${WD_CMD_FAILED_TOKEN}" > /dev/null ; then
     oc exec $@ ${pod} -- bash -c "rm -f /tmp/${WD_CMD_FAILED_TOKEN}"
-    brlog "ERROR" "Something error happned while running command in ${pod}. See ${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log for details."
+    brlog "ERROR" "Something error happened while running command in ${pod}. See ${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log for details."
     exit 1
   fi
 }
@@ -1273,7 +1273,7 @@ create_restore_instance_mappings(){
           brlog "ERROR" "Failed to create Discovery service instance for ${src_instances[$i]}"
           return 1
         else
-          brlog "INFO" "Created Disocvery service instance: ${instance_id}"
+          brlog "INFO" "Created Discovery service instance: ${instance_id}"
           mapping=$(fetch_cmd_result ${ELASTIC_POD} "echo '${mapping}' | jq -r '.instance_mappings |= . + [{\"source_instance_id\": \"${src_instances[$i]}\", \"dest_instance_id\": \"${instance_id}\"}]'" -c elasticsearch)
         fi
     done
