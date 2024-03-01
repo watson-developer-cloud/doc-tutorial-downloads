@@ -370,6 +370,9 @@ fi
 
 
 if [ ${COMMAND} = 'backup' ] ; then
+  if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
+    create_backup_instance_mappings
+  fi
   if [ "${CONTINUE_FROM_COMPONENT:-}" != "archive" ] ; then
     if ! "${SKIP_QUIESCE}" ; then
       quiesce
@@ -384,9 +387,6 @@ if [ ${COMMAND} = 'backup' ] ; then
   export VERIFY_COMPONENT=( "${ALL_COMPONENT[@]}")
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_$(date "+%Y%m%d_%H%M%S").backup"}
   mkdir -p "${BACKUP_DIR}"
-  if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
-    create_backup_instance_mappings
-  fi
   if [ -n "${CONTINUE_FROM_COMPONENT:+UNDEF}" ] ; then
     for comp in "${ALL_COMPONENT[@]}"
     do
@@ -424,6 +424,10 @@ if [ "${COMMAND}" = 'restore' ] ; then
     tar "${BACKUPFILE_TAR_OPTIONS[@]}" -xf "${BACKUP_FILE}"
   fi
   export BACKUP_FILE_VERSION=$(get_backup_version)
+  launch_utils_job "wd-backup-restore-util-job"
+  trap_add "oc ${OC_ARGS} delete job wd-backup-restore-util-job --ignore-not-found"
+  get_job_pod "app.kubernetes.io/component=wd-backup-restore"
+  wait_job_running ${POD}
   if [ $(compare_version "${BACKUP_FILE_VERSION}" "4.0.6") -ge 0 ] ; then
     if ! check_instance_mappings ; then
       brlog "ERROR" "Incorrect instance mapping."
@@ -451,6 +455,8 @@ if [ "${COMMAND}" = 'restore' ] ; then
       fi
     fi
   fi
+  oc ${OC_ARGS} delete job wd-backup-restore-util-job
+  trap_remove "oc ${OC_ARGS} delete job wd-backup-restore-util-job --ignore-not-found"
   if [ "${CONTINUE_FROM_COMPONENT:-}" != "post-restore" ] ; then
     if ! "${SKIP_QUIESCE}" ; then
       quiesce
