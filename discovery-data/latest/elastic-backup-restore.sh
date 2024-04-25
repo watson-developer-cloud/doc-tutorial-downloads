@@ -32,6 +32,10 @@ printUsage() {
   exit 1
 }
 
+get_recovery_status(){
+  fetch_cmd_result ${ELASTIC_POD} 'rm -f /tmp/recovery_status.json && export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" > /tmp/recovery_status.json && cat /tmp/recovery_status.json' ${OC_ARGS} -c elasticsearch
+}
+
 if [ $# -lt 2 ] ; then
   printUsage
 fi
@@ -417,7 +421,7 @@ EOF
   total_shards=0
   while true;
   do
-    recovery_status=$(fetch_cmd_result ${ELASTIC_POD} 'rm -f /tmp/recovery_status.json && export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" > /tmp/recovery_status.json && cat /tmp/recovery_status.json' ${OC_ARGS} -c elasticsearch)
+    recovery_status=$(get_recovery_status)
     brlog "DEBUG" "Recovery Status: ${recovery_status}"
     if [ "${recovery_status}" != "{}" ] ; then
       tmp_total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
@@ -441,7 +445,9 @@ EOF
   brlog "INFO" "Total shards in snapshot: ${total_shards}"
   while true;
   do
-    done_count=$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
+    recovery_status=$(get_recovery_status)
+    total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
+    done_count=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
     brlog "INFO" "${done_count} shards finished"
     if [ ${done_count} -ge ${total_shards} ] ; then
       break

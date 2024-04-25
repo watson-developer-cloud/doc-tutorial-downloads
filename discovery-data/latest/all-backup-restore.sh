@@ -8,6 +8,7 @@ SPLIT_DIR=./tmp_split_backup
 EXTRA_OC_ARGS="${EXTRA_OC_ARGS:-}"
 
 SCRIPT_DIR=$(dirname $0)
+KUBECONFIG_FILE="${SCRIPT_DIR}/.kubeconfig"
 
 . ${SCRIPT_DIR}/lib/function.bash
 
@@ -504,6 +505,8 @@ fi
 brlog "INFO" "Clean up"
 
 delete_service_account "${BACKUP_RESTORE_SA}"
+rm -f "${KUBECONFIG_FILE}"
+unset KUBECONFIG
 rm -rf "${BACKUP_DIR}"
 
 disable_trap

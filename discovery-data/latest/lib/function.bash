@@ -1460,8 +1460,10 @@ delete_service_account(){
 oc_login_as_scripts_user(){
   create_service_account "${BACKUP_RESTORE_SA}"
   local oc_token=$(get_oc_token "${BACKUP_RESTORE_SA}")
-  local cluster=$(oc config view --minify --output jsonpath='{..server}')
-  oc login "${cluster}" --token="${oc_token}"
+  local cluster=$(oc config view --minify -o jsonpath='{..server}')
+  local namespace=$(oc config view --minify -o jsonpath='{..namespace}')
+  export KUBECONFIG="${KUBECONFIG_FILE:-${PWD}/.kubeconfig}"
+  oc login "${cluster}" --token="${oc_token}" -n "${namespace}" --insecure-skip-tls-verify
   trap_add "brlog 'INFO' 'You currently oc login as a scripts ServiceAccount. You can rerun scripts with this. Please delete ServiceAccount ${BACKUP_RESTORE_SA} and clusterrolebinding ${BACKUP_RESTORE_SA}-cluster-rb when you complete backup or restore'"
 
 }
