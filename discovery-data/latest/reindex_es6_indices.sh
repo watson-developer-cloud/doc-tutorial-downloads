@@ -3,6 +3,22 @@
 set -euo pipefail
 
 TMP_WORK_DIR="/tmp/elastic-workdir"
+DRY_RUN=false # If this is true, this script will not reindex any indices. It just print indices versions.
+
+function show_help() {
+    cat <<EOS
+Reindex elastic search indices from version 6 to version 7.
+If version 7 indices are detected, this script does nothing.
+If version 6 indices are detected, this script will perform reindexing to update the indices as version 7.
+
+usage: $0 [options]
+
+options:
+  -h, --help                           Print help info.
+  --dry-run                            [Optional] If specified, this script does not perform reindexing. It will just print detected indices versions to stdout.
+                                       Use this option if you only want to check your elastic search indices versions.
+EOS
+}
 
 function generate_new_settings() {
     local index="$1"
@@ -141,6 +157,7 @@ function clone_index() {
     clone_body_json=clone_body.json
     echo "${clone_body}" > "${clone_body_json}"
 
+    # TODO validate clone result.
     curl -sSfk -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" -XPOST "${ELASTIC_ENDPOINT}/${src_index}/_clone/${dst_index}" -d@"${TMP_WORK_DIR}/${clone_body_json}"
     echo ""
 
@@ -178,7 +195,39 @@ function remove_index_if_exists(){
     fi
 }
 
+# Parse argument.
+while [[ $# -gt 0 ]]; do
+    OPT=$1
+    case $OPT in
+    -h | --help)
+        show_help
+        exit 0
+        ;;
+    --dry-run)
+        DRY_RUN=true
+        shift 1
+        ;;
+    -- | -)
+        shift 1
+        param+=("$@")
+        break
+        ;;
+    -*)
+        echo "illegal option: $1"
+        exit 1
+        ;;
+    *)
+        echo "illegal argument: $1"
+        exit 1
+        ;;
+    esac
+done
+
 # Main logic start from here
+if [[ ${DRY_RUN} = "true" ]]; then
+    echo "'--dry-run' specified. Running script in dry running mode. No reindex will be performed."
+fi
+
 trap 'if [ $? -ne 0 ] ; then echo "Error: Please contact support. Do not run this scripts again."; fi' 0 1 2 3 15
 rm -rf "${TMP_WORK_DIR}"
 mkdir -p "${TMP_WORK_DIR}"
@@ -208,6 +257,12 @@ if [ "${index_count}" = "0" ] ; then
     exit 0
 fi
 
+distribution="$(curl -sSkf -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" "${ELASTIC_ENDPOINT}" | jq -r .version.distribution)"
+if [ "$distribution" = "opensearch" ] ; then
+    echo "Opensearch distribution is being used. There is no need for reindexing."
+    exit 0
+fi
+
 echo "Getting index list"
 indices="$(curl -sSkf -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" "${ELASTIC_ENDPOINT}/_cat/indices?h=index")"
 
@@ -228,6 +283,8 @@ for index in ${indices} ; do
     version="$(curl -sSkf -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" "${ELASTIC_ENDPOINT}/${index}/_settings" | jq -r .[].settings.index.version.created)"
     if [[ ${version} = 7* ]]; then
         echo "[${count} / ${total}] Skip ElasticSearch 7 index: ${index}"
+    elif [[ ${version} = 6* && ${DRY_RUN} = "true" ]]; then
+        echo "[${count} / ${total}] Skip ElasticSearch 6 index: ${index}"
     elif [[ ${version} = 6* ]]; then
         echo "[${count} / ${total}] ElasticSearch 6 index found: ${index}"
         echo "----------------------------"

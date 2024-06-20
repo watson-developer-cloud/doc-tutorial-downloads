@@ -5,6 +5,8 @@ export BACKUP_VERSION_FILE="tmp/version.txt"
 export DATASTORE_ARCHIVE_OPTION="${DATASTORE_ARCHIVE_OPTION--z}"
 export BACKUP_RESTORE_LOG_DIR="${BACKUP_RESTORE_LOG_DIR:-wd-backup-restore-logs-$(date "+%Y%m%d_%H%M%S")}"
 export BACKUP_RESTORE_SA="${BACKUP_RESTORE_SA:-wd-discovery-backup-restore-sa}"
+export BACKUP_RESTORE_RBAC_LABEL_KEY="${BACKUP_RESTORE_RBAC_LABEL_KEY:-discovery.ibm.com/component}"
+export BACKUP_RESTORE_RABC_LABEL_VALUE="${BACKUP_RESTORE_RBAC_LABEL_VALUE:-backup-restore-scripts}"
 
 case "${BACKUP_RESTORE_LOG_LEVEL}" in
   "ERROR") export LOG_LEVEL_NUM=0;;
@@ -41,8 +43,17 @@ trap_add(){
 }
 
 trap_remove(){
+  # Remove $1 command from 'trap_commands'.
   trap_commands=( "${trap_commands[@]/$1}" )
-  trap "${trap_commands}" 0 1 2 3 15
+
+  # NOTE: if 'trap_commands' is empty, "${trap_commands}" cause unbound variable error when set -u.
+  if [[ -z "${trap_commands[@]}" ]]; then
+    cmd=""
+  else
+    printf -v joined '%s;' "${trap_commands[@]}"
+    cmd="$(echo -n "${joined%;}")"
+  fi
+  trap "${cmd}" 0 1 2 3 15
 }
 
 disable_trap(){
@@ -340,6 +351,7 @@ wait_cmd(){
   done
 }
 
+# NOTE: This does not detect error exit code.
 fetch_cmd_result(){
   set +e
   local pod=$1
@@ -734,6 +746,11 @@ run_core_init_db_job(){
   done
 }
 
+# Get the file path where it only stores the last result of 'run_cmd_in_pod'.
+get_last_cmd_result_file() {
+  echo "${BACKUP_RESTORE_LOG_DIR}/last_cmd_result.log"
+}
+
 run_cmd_in_pod(){
   local pod="$1"
   shift
@@ -759,12 +776,27 @@ EOF
   _oc_cp ${TMP_WORK_DIR}/${WD_CMD_FILE} ${pod}:/tmp/${WD_CMD_FILE} $@
   oc exec $@ ${pod} -- bash -c "rm -rf /tmp/${WD_CMD_COMPLETION_TOKEN} && /tmp/${WD_CMD_FILE} &"
   wait_cmd ${pod} $@
-  oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+  
+  # Create an intermediate log file which only stores the last command result.
+  LAST_CMD_RESULT_FILE=$(get_last_cmd_result_file)
+  oc exec $@ ${pod} -- bash -c "cat /tmp/${WD_CMD_LOG}; rm -rf /tmp/${WD_CMD_FILE} /tmp/${WD_CMD_LOG} /tmp/${WD_CMD_COMPLETION_TOKEN}" > "$LAST_CMD_RESULT_FILE"
+  cat "$LAST_CMD_RESULT_FILE" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+
   files=$(fetch_cmd_result ${pod} "ls /tmp" $@)
   if echo "${files}" | grep "${WD_CMD_FAILED_TOKEN}" > /dev/null ; then
     oc exec $@ ${pod} -- bash -c "rm -f /tmp/${WD_CMD_FAILED_TOKEN}"
     brlog "ERROR" "Something error happened while running command in ${pod}. See ${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log for details."
     exit 1
+  fi
+}
+
+# Get the last result (stdout) of 'run_cmd_in_pod'
+get_last_cmd_result_in_pod(){
+  LAST_CMD_RESULT_FILE=$(get_last_cmd_result_file)
+  if [ ! -f "$LAST_CMD_RESULT_FILE" ]; then
+    echo ""
+  else
+    cat "$LAST_CMD_RESULT_FILE"
   fi
 }
 
@@ -1026,7 +1058,9 @@ require_mt_mt_migration(){
 
 get_primary_pg_pod(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  if [ $(compare_version "${wd_version}" "4.0.0") -ge 0 ] ; then
+  if [ $(compare_version "${wd_version}" "5.0.0") -ge 0 ] ; then
+    echo "$(oc get pod ${OC_ARGS} -l "icpdsupport/podSelector=discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
+  elif [ $(compare_version "${wd_version}" "4.0.0") -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "postgresql=${TENANT_NAME}-discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
   else
     for POD in $(oc get pods ${OC_ARGS} -o jsonpath='{.items[*].metadata.name}' -l tenant=${TENANT_NAME},component=stolon-keeper) ; do
@@ -1132,6 +1166,52 @@ check_datastore_available(){
   check_s3_available || { brlog "ERROR" "S3 is unavailable"; return 1; }
   brlog "INFO" "All data store service are available"
 }
+
+# Get elastic indices and return its version as a string. Return the oldest index version. 
+# Assume there are only version 6 or 7 indices in the cluster.
+get_elastic_version() {
+  ELASTIC_POD=$(get_elastic_pod)
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "--dry-run" -c elasticsearch ${OC_ARGS}
+  result=$(get_last_cmd_result_in_pod)
+
+  if echo "$result" | grep -q "Skip ElasticSearch 6 index"; then
+    echo "ES6"
+  elif echo "$result" | grep -q "Skip ElasticSearch 7 index"; then
+    echo "ES7"
+  elif echo "$result" | grep -q "ElasticSearch has no index"; then
+    echo "NoIndex"
+  else
+    echo "Unknown"
+  fi  
+}
+
+validate_elastic_version() {
+  ELASTIC_VERSION="${1:-$(get_elastic_version)}"
+
+  if [[ ${ELASTIC_VERSION} = "ES6" ]]; then
+    brlog "WARN" "Elasticsearch 6 detected."
+    if [[ ${IGNORE_OLD_INDEX} = "true" ]]; then
+      brlog "WARN" "Ignoring old index."
+    elif [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
+      brlog "INFO" "Elasticsearch 6 will be reindexed after quiescing."
+    else
+      brlog "ERROR" "Detected old index created in ElasticSearch 6 that is not supported Watson Discovery 4.8.x. They have to be reindexed if you restore to 4.8.x or higher. Reindex actually won't change your data, but it takes time. Run backup script with '--reindex-old-index' option if you reindex them. You can proceed backup without reindex, but you can't restore the backup data to 4.8.x. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
+      exit 1
+    fi
+  fi 
+}
+
+# Reindex elastic search indices from version 6 to 7.
+reindex_elastic_es6() {
+  brlog "INFO" "Reindexing ..."
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "" -c elasticsearch ${OC_ARGS}
+  brlog "INFO" "Reindex completed. Waiting for ElasticSearch status to be green ..."
+  # Wait a few moments for elastic search to be ready after the reindex.
+  # TODO: implement waiting logic inside of reindex_es6_indices.sh, and remove the sleep below from this function.
+  sleep 60
+  check_elastic_available || { brlog "ERROR" "ElasticSearch is unavailable"; exit 1; }
+}
+
 
 check_etcd_available(){
   setup_etcd_env
@@ -1400,15 +1480,17 @@ create_service_instance(){
 
 create_service_account(){
   local service_account="$1"
-  if [ -n "$(oc get sa ${service_account})" ] ; then
+  if [ -n "$(oc get sa "${service_account}")" ] ; then
     brlog "INFO" "Service Account ${service_account} already exists"
   else
     brlog "INFO" "Create Service Account for scripts: ${service_account}"
     local namespace="${NAMESPACE:-$(oc config view --minify --output 'jsonpath={..namespace}')}"
-    oc ${OC_ARGS} create sa ${service_account}
-    oc ${OC_ARGS} policy add-role-to-user admin system:serviceaccount:${namespace}:${service_account}
+    oc ${OC_ARGS} create sa "${service_account}"
+    oc ${OC_ARGS} label sa "${service_account}" "${BACKUP_RESTORE_RBAC_LABEL_KEY}"="${BACKUP_RESTORE_RABC_LABEL_VALUE}"
+    oc ${OC_ARGS} policy add-role-to-user admin "system:serviceaccount:${namespace}:${service_account}"
     oc delete clusterrolebinding "${service_account}-cluster-rb" --ignore-not-found
-    oc ${OC_ARGS} create clusterrolebinding "${service_account}-cluster-rb" --clusterrole cluster-admin --serviceaccount ${namespace}:${service_account} 2>&1
+    oc ${OC_ARGS} create clusterrolebinding "${service_account}-cluster-rb" --clusterrole cluster-admin --serviceaccount "${namespace}:${service_account}" 2>&1
+    oc ${OC_ARGS} label clusterrolebinding "${service_account}-cluster-rb" "${BACKUP_RESTORE_RBAC_LABEL_KEY}"="${BACKUP_RESTORE_RABC_LABEL_VALUE}"
     if [ -n "$(oc ${OC_ARGS} get role discovery-operator-role --ignore-not-found)" ] ; then
       # This is 2.2.1 install. Link operator role to this service account to get permission of discovery resources
       cat <<EOF | oc ${OC_ARGS} apply -f -
@@ -1417,6 +1499,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ${service_account}-rb
+  labels:
+    ${BACKUP_RESTORE_RBAC_LABEL_KEY}: ${BACKUP_RESTORE_RABC_LABEL_VALUE}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -1448,9 +1532,7 @@ get_oc_token(){
 
 delete_service_account(){
   local service_account="$1"
-  oc ${OC_ARGS} delete rolebinding ${service_account}-rb --ignore-not-found
-  oc ${OC_ARGS} delete sa ${service_account} --ignore-not-found
-  oc ${OC_ARGS} delete clusterrolebinding ${service_account}-cluster-rb --ignore-not-found
+  oc ${OC_ARGS} delete rolebinding,clusterrolebinding,sa -l "${BACKUP_RESTORE_RBAC_LABEL_KEY}"="${BACKUP_RESTORE_RABC_LABEL_VALUE}" --ignore-not-found
   trap_remove "brlog 'INFO' 'You currently oc login as a scripts ServiceAccount. You can rerun scripts with this. Please delete ServiceAccount ${service_account} and clusterrolebinding ${service_account}-cluster-rb when you complete backup or restore'"
   trap_remove "brlog 'INFO' 'brlog 'INFO' 'Please delete rolebinding ${service_account}-rb when you delete ServiceAccount'"
   brlog "INFO" "Deleted scripts service account: ${service_account}"

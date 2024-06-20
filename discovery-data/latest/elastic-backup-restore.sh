@@ -239,9 +239,13 @@ function clean_up(){
       else\
         break;\
       fi;\
-    done && \
-    curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
+    done ' ${OC_ARGS} -c elasticsearch
     echo
+
+    if [ $(compare_version ${WD_VERSION} "5.0.0") -lt 0 ]; then
+      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
+      curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
+    fi
 
     if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
       start_minio_port_forward
@@ -409,13 +413,19 @@ EOF
     run_cmd_in_pod ${ELASTIC_POD} "tar ${ELASTIC_TAR_OPTIONS[*]} -xmpf /workdir/shared_storage/${ELASTIC_BACKUP} -C /workdir/shared_storage && rm -f /workdir/shared_storage/${ELASTIC_BACKUP}" ${OC_ARGS} -c elasticsearch
   fi
   brlog "INFO" "Start Restoring snapshot"
+
   run_cmd_in_pod ${ELASTIC_POD} 'export S3_HOST='${S3_SVC}' && export S3_PORT='${S3_PORT}' && export S3_ELASTIC_BACKUP_BUCKET='${ELASTIC_BACKUP_BUCKET}' && export ELASTIC_ENDPOINT=https://localhost:9200 && \
   S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g") && \
-  curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" && \
   curl -XDELETE --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_all?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
   curl -XDELETE --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/.*?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
   curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" '"${REPO_CONFIGURATION}"' && \
   curl -XPOST --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"indices\": \"*,-application_logs-*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}" | grep accepted && echo ' ${OC_ARGS} -c elasticsearch
+  
+  if [ $(compare_version ${WD_VERSION} "5.0.0") -lt 0 ]; then
+    run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
+    curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" '  ${OC_ARGS} -c elasticsearch
+  fi
+  
   brlog "INFO" "Sent restore request"
   waited_seconds=0
   total_shards=0
