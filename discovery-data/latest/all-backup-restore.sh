@@ -42,6 +42,8 @@ Basically, you don't need these advanced options.
     --datastore-archive-option="<tar_option>"  Tar options for compression used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
     --postgresql-archive-option="<tar_option>" Tar options for compression used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
     --etcd-archive-option="<tar_option>"       Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
+    --reindex-old-index                        Reindex elastic search indices from version 6 to 7 before making the backup. If existing elastic search indices version is already 7, this flag does nothing. They have to be reindexed if you want to restore to 4.8.x. Reindex actually won't change your data, but it takes time. If you want to make the backup without reindex, use '--ignore-old-index' instead.
+    --ignore-old-index                         Whether to skip reindexing old (version 6) elastic search indices before making the backup. You can proceed backup without reindex, but you can't restore the backup data to 4.8.x.
     --skip-verify-archive                      Skip the all verifying process of the archive.
     --skip-verify-backup                       Skip verifying the backup file.
     --skip-verify-datastore-archive            Skip verifying the archive of datastores.
@@ -224,6 +226,12 @@ do
     --skip-quiesce)
       export SKIP_QUIESCE=true
       ;;
+    --reindex-old-index)
+      export REINDEX_OLD_INDEX=true
+      ;;
+    --ignore-old-index)
+      export IGNORE_OLD_INDEX=true
+      ;;
     --skip-quiesce=*)
       export SKIP_QUIESCE="${1#--skip-quiesce=}"
       ;;
@@ -300,6 +308,8 @@ export TENANT_NAME=${TENANT_NAME}
 export SCRIPT_DIR=${SCRIPT_DIR}
 export OC_ARGS="${EXTRA_OC_ARGS}"
 export CLEAN=${CLEAN:-false}
+export REINDEX_OLD_INDEX=${REINDEX_OLD_INDEX:-false}
+export IGNORE_OLD_INDEX=${IGNORE_OLD_INDEX:-false}
 
 ###############
 # Function
@@ -354,6 +364,7 @@ mkdir -p ${TMP_WORK_DIR}
 
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 brlog "INFO" "Component log directory: ${BACKUP_RESTORE_LOG_DIR}"
+
 CURRENT_COMPONENT="pre-process"
 check_datastore_available
 create_elastic_shared_pvc
@@ -369,8 +380,9 @@ if ! "${BACKUP_RESTORE_IN_POD:-false}" ; then
   export MC_COMMAND=${MC_COMMAND}
 fi
 
-
 if [ ${COMMAND} = 'backup' ] ; then
+  ELASTIC_VERSION=$(get_elastic_version)
+  validate_elastic_version "$ELASTIC_VERSION"
   if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
     create_backup_instance_mappings
   fi
@@ -379,11 +391,15 @@ if [ ${COMMAND} = 'backup' ] ; then
       quiesce
     fi
   fi
+  if [[ ${ELASTIC_VERSION} = "ES6" ]] && [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
+    reindex_elastic_es6
+  fi 
   if [ $(compare_version "${WD_VERSION}" "2.1.3") -ge 0 ] ; then
     ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
   else
     ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
   fi
+
   export ALL_COMPONENT
   export VERIFY_COMPONENT=( "${ALL_COMPONENT[@]}")
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_$(date "+%Y%m%d_%H%M%S").backup"}
