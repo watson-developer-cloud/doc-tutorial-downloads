@@ -201,7 +201,7 @@ if [ "${COMMAND}" = "restore" ] ; then
       RC=$?
       echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
       if [ $RC -ne 0 ] ; then
-        brlog "ERROR" "Some files could not be transfered. Please consider to use '--use-job' and '--pvc' option. See help (--help) for details."
+        brlog "ERROR" "Some files could not be transferred. Please consider to use '--use-job' and '--pvc' option. See help (--help) for details."
         exit 1
       fi
       set -e
