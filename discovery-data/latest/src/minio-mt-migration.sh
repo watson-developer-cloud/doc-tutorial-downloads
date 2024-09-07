@@ -64,13 +64,13 @@ MC=mc
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
-${MC} ${MC_OPTS[@]} --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+"${MC}" ${MC_OPTS[@]} --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
 
 for LOCATION in "cnm${bucket_suffix}/mt" "common${bucket_suffix}/mt" "exported-documents${bucket_suffix}"; do
-  FOLDERS=$( (${MC} ${MC_OPTS[@]} --quiet --json ls "wdminio/${LOCATION}/${source}" || echo '{}') | jq -r '.key|values')
+  FOLDERS=$( ("${MC}" ${MC_OPTS[@]} --quiet --json ls "wdminio/${LOCATION}/${source}" || echo '{}') | jq -r '.key|values')
   for FOLDER in ${FOLDERS[@]}; do
-    ${MC} ${MC_OPTS[@]} --quiet cp --recursive wdminio/${LOCATION}/${source}/${FOLDER} wdminio/${LOCATION}/${target}/${FOLDER}
-    ${MC} ${MC_OPTS[@]} --quiet rm --recursive --force wdminio/${LOCATION}/${source}/${FOLDER}
+    "${MC}" ${MC_OPTS[@]} --quiet cp --recursive wdminio/${LOCATION}/${source}/${FOLDER} wdminio/${LOCATION}/${target}/${FOLDER}
+    "${MC}" ${MC_OPTS[@]} --quiet rm --recursive --force wdminio/${LOCATION}/${source}/${FOLDER}
   done
 done
 rm -rf ${TMP_WORK_DIR}/*

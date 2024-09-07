@@ -48,13 +48,13 @@ BUCKET_SUFFIX="${BUCKET_SUFFIX:-}"
 if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
-  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
   if [ $(compare_version "$(get_version)" "4.7.0") -ge 0 ] ; then
     EXCLUDE_OBJECTS+=$'\n'
     EXCLUDE_OBJECTS+="$(cat "${SCRIPT_DIR}/src/mcg_exclude_paths")"
   fi
-  for bucket in $(${MC} "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
+  for bucket in $("${MC}" "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
   do
     EXTRA_MC_MIRROR_COMMAND=()
     ORG_IFS=${IFS}
@@ -75,7 +75,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     set +e
     while true;
     do
-      ${MC} "${MC_OPTS[@]}" --quiet mirror "${MC_MIRROR_OPTS[@]}" "${EXTRA_MC_MIRROR_COMMAND[@]}" wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
+      "${MC}" "${MC_OPTS[@]}" --quiet mirror "${MC_MIRROR_OPTS[@]}" "${EXTRA_MC_MIRROR_COMMAND[@]}" wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} 2>&1
       RC=$?
       echo "RC=${RC}"
       if [ $RC -eq 0 ] ; then
@@ -100,7 +100,7 @@ if [ "${COMMAND}" = "restore" ] ; then
   tar "${MINIO_TAR_OPTIONS[@]}" -xf ${MINIO_BACKUP} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   rm -f ${MINIO_BACKUP}
   brlog "INFO" "Restoring data..."
-  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   for bucket_path in "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"/*
   do
     bucket="$(basename "${bucket_path}")"
@@ -108,9 +108,9 @@ if [ "${COMMAND}" = "restore" ] ; then
       mv "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}" "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}${BUCKET_SUFFIX}"
       bucket="${bucket}${BUCKET_SUFFIX}"
     fi
-    if ${MC} "${MC_OPTS[@]}" ls wdminio | grep ${bucket} > /dev/null ; then
-      if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${bucket}/)" ] ; then
-        ${MC} "${MC_OPTS[@]}" --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
+    if "${MC}" "${MC_OPTS[@]}" ls wdminio | grep ${bucket} > /dev/null ; then
+      if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${bucket}/)" ] ; then
+        "${MC}" "${MC_OPTS[@]}" --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
       fi
       if [ "${bucket}" = "discovery-dfs" ] || [ "${bucket}" = "ranker-wire-all" ] ; then
         brlog "INFO" "    Skip ${bucket}"
@@ -130,7 +130,7 @@ if [ "${COMMAND}" = "restore" ] ; then
       fi
       while true;
       do
-        ${MC} "${MC_OPTS[@]}" ${MC_MIRROR_COMMAND} --quiet "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/ wdminio/${bucket}/ 2>&1
+        "${MC}" "${MC_OPTS[@]}" ${MC_MIRROR_COMMAND} --quiet "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}/ wdminio/${bucket}/ 2>&1
         RC=$?
         echo "RC=${RC}"
         if [ $RC -eq 0 ] ; then

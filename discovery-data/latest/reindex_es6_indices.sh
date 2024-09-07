@@ -4,6 +4,8 @@ set -euo pipefail
 
 TMP_WORK_DIR="/tmp/elastic-workdir"
 DRY_RUN=false # If this is true, this script will not reindex any indices. It just print indices versions.
+ELASTIC_STATUS_CHECK_INTERVAL=${ELASTIC_STATUS_CHECK_INTERVAL:-300}
+ELASTIC_MAX_WAIT_RECOVERY_SECONDS=${ELASTIC_MAX_WAIT_RECOVERY_SECONDS:-3600}
 
 function show_help() {
     cat <<EOS
@@ -19,6 +21,40 @@ options:
                                        Use this option if you only want to check your elastic search indices versions.
 EOS
 }
+
+
+# Get the elastic search cluster health status. If healthy, this should return "green".
+function get_elastic_health_status() {
+  status=$(curl -sSfk -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status")
+  if [ $? -ne 0 ]; then
+    status="unknown"
+  fi
+  echo "$status"
+}
+
+
+# Usage: func deadline_sec interval_sec
+# Wait until the health status to become green. Return as soon as the status become green. Otherwise wait until the specified deadline.
+function wait_for_elastic_green_health() {
+  local deadline_sec=${1:-$ELASTIC_MAX_WAIT_RECOVERY_SECONDS}
+  local interval_sec=${2:-$ELASTIC_STATUS_CHECK_INTERVAL}
+  local elapsed_sec=0
+  local start_time=$(date +%s)
+
+  echo "Waiting until ElasticSearch becomes green status ..."
+  while [ $elapsed_sec -lt $deadline_sec ]; do
+    status=$(get_elastic_health_status)
+    echo "Current status: $status."
+    if [ "$status" == "green" ]; then
+        return
+    fi
+    sleep $interval_sec
+    current_time=$(date +%s)
+    elapsed_sec=$((current_time - start_time))
+  done
+  echo "The elastic cluster status did not become green after $deadline_sec sec."
+}
+
 
 function generate_new_settings() {
     local index="$1"
@@ -159,8 +195,16 @@ function clone_index() {
 
     # TODO validate clone result.
     curl -sSfk -u "${ELASTIC_USER}:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" -XPOST "${ELASTIC_ENDPOINT}/${src_index}/_clone/${dst_index}" -d@"${TMP_WORK_DIR}/${clone_body_json}"
-    echo ""
 
+    # Wait for green health status after the clone.
+    wait_for_elastic_green_health
+    cluster_status=$(get_elastic_health_status)
+    if [ "$cluster_status" != "green" ]; then
+        echo "ElasticSearch cluster's status did not become green after cloning '$src_index' index into '$dst_index'."
+        exit 1
+    fi
+
+    echo ""
     unset_index_readonly "${src_index}"
     unset_index_readonly "${dst_index}"
 }
@@ -194,6 +238,7 @@ function remove_index_if_exists(){
         exit 1
     fi
 }
+
 
 # Parse argument.
 while [[ $# -gt 0 ]]; do
