@@ -58,15 +58,15 @@ function clean_up(){
     echo >> ${ELASTIC_LOG}
 
     brlog "INFO" "Clean up"
-    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    "${MC}" ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
     echo
   fi
 }
 
 if [ "${COMMAND}" = "backup" ] ; then
-  ${MC} ${MC_OPTS[@]} config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
-  if [ -n "$(${MC} ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
-    ${MC} ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  "${MC}" ${MC_OPTS[@]} config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  if [ -n "$("${MC}" ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
+    "${MC}" ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
   S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g")
   curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" -H "Content-Type: application/json" -d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}" | grep acknowledged >> "${ELASTIC_LOG}"
@@ -83,10 +83,10 @@ if [ "${COMMAND}" = "backup" ] ; then
       do
         cat << EOF >> "${ELASTIC_LOG}"
 ===================================================
-${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
+"${MC}" ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
 ===================================================
 EOF
-        ${MC} "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+        "${MC}" "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
         RC=$?
         echo "RC=${RC}" >> "${ELASTIC_LOG}"
         if [ $RC -eq 0 ] ; then
@@ -112,7 +112,7 @@ EOF
   curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}/${ELASTIC_SNAPSHOT}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" >> "${ELASTIC_LOG}" || true
   while ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/${ELASTIC_REPO}?master_timeout=${ELASTIC_REQUEST_TIMEOUT}" | grep "acknowledged" >> "${ELASTIC_LOG}" ; do sleep 30; done
   echo
-  ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
 
 elif [ "${COMMAND}" = "restore" ] ; then
   if [ ! -e "${ELASTIC_BACKUP}" ] ; then
@@ -127,18 +127,18 @@ elif [ "${COMMAND}" = "restore" ] ; then
   tar "${ELASTIC_TAR_OPTIONS[@]}" -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   rm -f ${ELASTIC_BACKUP}
   brlog "INFO" "Transferring data to MinIO..."
-  ${MC} "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
-  if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
-    ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+  "${MC}" "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
+    "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
   while true;
   do
     cat << EOF >> "${ELASTIC_LOG}"
 ===================================================
-${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
+"${MC}" ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
 ===================================================
 EOF
-    ${MC} "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
+    "${MC}" "${MC_OPTS[@]}" mirror "${MC_MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${ELASTIC_LOG}"
     RC=$?
     echo "RC=${RC}" >> "${ELASTIC_LOG}"
     if [ $RC -eq 0 ] ; then

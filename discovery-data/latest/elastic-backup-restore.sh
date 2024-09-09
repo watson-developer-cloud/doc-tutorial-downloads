@@ -82,9 +82,10 @@ if [ $(compare_version ${WD_VERSION} "4.7.0") -ge 0 ] ; then
   create_elastic_shared_pvc
   # Mount shared volume
   oc ${OC_ARGS} patch wd "${TENANT_NAME}" --type merge --patch "{\"spec\": {\"elasticsearch\": {\"sharedStoragePvc\": \"${ELASTIC_SHARED_PVC}\"}}}"
+  ELASTIC_DATA_STS=$(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME},ibm-es-data=True" -o jsonpath='{.items[*].metadata.name}')
   while :
   do
-    test -n "$(oc ${OC_ARGS} get sts ${TENANT_NAME}-ibm-elasticsearch-es-server-data -o jsonpath="{..volumes[?(@.persistentVolumeClaim.claimName==\"${ELASTIC_SHARED_PVC}\")]}")" && break
+    test -n "$(oc ${OC_ARGS} get sts ${ELASTIC_DATA_STS} -o jsonpath="{..volumes[?(@.persistentVolumeClaim.claimName==\"${ELASTIC_SHARED_PVC}\")]}")" && break
     brlog "INFO" "Wait for ElasticSearch to mount shared PVC"
     sleep 30
   done
@@ -97,7 +98,7 @@ if [ $(compare_version ${WD_VERSION} "4.7.0") -ge 0 ] ; then
   sleep 30
   # Update configmap
   brlog "INFO" "Update ConfigMap for ElastisSearch configuration"
-  oc ${OC_ARGS} rollout status sts "${TENANT_NAME}-ibm-elasticsearch-es-server-data"
+  oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
   for cm in $(oc ${OC_ARGS} get cm -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -v "cpdbr")
   do
     update_elastic_configmap "${cm}"
@@ -242,14 +243,14 @@ function clean_up(){
     done ' ${OC_ARGS} -c elasticsearch
     echo
 
-    if [ $(compare_version ${WD_VERSION} "5.0.0") -lt 0 ]; then
+    if [ $(compare_version ${WD_VERSION} "4.8.6") -lt 0 ]; then
       run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
       curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
     fi
 
     if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
       start_minio_port_forward
-      ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
       stop_minio_port_forward
       echo
     else
@@ -272,11 +273,11 @@ function clean_up(){
       brlog "INFO" "Waiting for ElasticSearch pod start up"
       while :
       do
-        oc ${OC_ARGS} get sts ${TENANT_NAME}-ibm-elasticsearch-es-server-data &> /dev/null && break
+        oc ${OC_ARGS} get sts "${ELASTIC_DATA_STS}" &> /dev/null && break
         brlog "INFO" "Wait for ElasticSearch statefulset"
         sleep 30
       done
-      oc ${OC_ARGS} rollout status sts "${TENANT_NAME}-ibm-elasticsearch-es-server-data"
+      oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
     fi
   fi
 }
@@ -294,9 +295,9 @@ if [ ${COMMAND} = 'backup' ] ; then
   if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
     # Clean up MinIO
     start_minio_port_forward
-    ${MC} "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
-    if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
-      ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    "${MC}" "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+    if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
+      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
     fi
     stop_minio_port_forward
   else
@@ -319,12 +320,12 @@ if [ ${COMMAND} = 'backup' ] ; then
         brlog "INFO" "Transfering snapshot from MinIO"
         cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
-${MC} ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
+"${MC}" ${MC_OPTS[@]} mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}"
 ===================================================
 EOF
         set +e
         start_minio_port_forward
-        ${MC} "${MC_OPTS[@]}" mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+        "${MC}" "${MC_OPTS[@]}" mirror wdminio/${ELASTIC_BACKUP_BUCKET} ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
         RC=$?
         stop_minio_port_forward
         echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
@@ -382,19 +383,19 @@ if [ "${COMMAND}" = 'restore' ] ; then
     tar "${ELASTIC_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
     brlog "INFO" "Transferring data to MinIO..."
     start_minio_port_forward
-    ${MC} "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
-    if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
-      ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+    "${MC}" "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+    if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
+      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
     fi
     stop_minio_port_forward
     set +e
     cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
 ===================================================
-${MC} ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
+"${MC}" ${MC_OPTS[@]} mirror --debug ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET}
 ===================================================
 EOF
     start_minio_port_forward
-    ${MC} "${MC_OPTS[@]}" mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    "${MC}" "${MC_OPTS[@]}" mirror ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET} wdminio/${ELASTIC_BACKUP_BUCKET} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     RC=$?
     stop_minio_port_forward
     echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
@@ -402,7 +403,7 @@ EOF
       brlog "ERROR" "Some files could not be transfered. Consider to use '--use-job' and '--pvc' option. Please see help (--help) for details."
       brlog "INFO" "Clean up"
       start_minio_port_forward
-      ${MC} "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
       stop_minio_port_forward
       exit 1
     fi
@@ -421,7 +422,7 @@ EOF
   curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" '"${REPO_CONFIGURATION}"' && \
   curl -XPOST --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"indices\": \"*,-application_logs-*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}" | grep accepted && echo ' ${OC_ARGS} -c elasticsearch
   
-  if [ $(compare_version ${WD_VERSION} "5.0.0") -lt 0 ]; then
+  if [ $(compare_version ${WD_VERSION} "4.8.6") -lt 0 ]; then
     run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
     curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" '  ${OC_ARGS} -c elasticsearch
   fi

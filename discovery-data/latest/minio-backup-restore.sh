@@ -113,6 +113,16 @@ fi
 export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
+# mc mirror command options.
+MIRROR_OPTS=(--quiet)
+# NOTE: --retry flag is currently a boolean flag and cannot specify the how many times to retry.
+if [ "$(has_mc_mirror_retry)" -eq 1 ]; then
+  MIRROR_OPTS+=("--retry")
+fi
+if [[ -z "${LOG_LEVEL_NUM:+UNDEF}" ]] || [ "$LOG_LEVEL_NUM" -ge 3 ]; then
+  MIRROR_OPTS+=("--debug")
+fi
+
 BUCKET_SUFFIX="$(get_bucket_suffix)"
 
 # backup
@@ -120,13 +130,13 @@ if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
   start_minio_port_forward
-  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
   if [ $(compare_version "$(get_version)" "4.7.0") -ge 0 ] ; then
     EXCLUDE_OBJECTS+=$'\n'
     EXCLUDE_OBJECTS+="$(cat "${SCRIPT_DIR}/src/mcg_exclude_paths")"
   fi
-  for bucket in $(${MC} "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
+  for bucket in $("${MC}" "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
   do
     EXTRA_MC_MIRROR_COMMAND=()
     ORG_IFS=${IFS}
@@ -145,7 +155,7 @@ if [ "${COMMAND}" = "backup" ] ; then
     IFS=${ORG_IFS}
     cd ${TMP_WORK_DIR}
     set +e
-    ${MC} "${MC_OPTS[@]}" --quiet mirror "${EXTRA_MC_MIRROR_COMMAND[@]}" wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+    "${MC}" "${MC_OPTS[@]}" mirror "${MIRROR_OPTS[@]}" "${EXTRA_MC_MIRROR_COMMAND[@]}" wdminio/${bucket} ${MINIO_BACKUP_DIR}/${bucket} &>> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     RC=$?
     echo "RC=${RC}" >> "${SCRIPT_DIR}/${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     if [ $RC -ne 0 ] ; then
@@ -181,23 +191,24 @@ if [ "${COMMAND}" = "restore" ] ; then
   tar "${MINIO_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   brlog "INFO" "Restoring data..."
   start_minio_port_forward
-  ${MC} "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   for bucket_path in "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"/*
   do
     bucket="$(basename "${bucket_path}")"
+    brlog "DEBUG" "Restoring bucket '$bucket' ..."
     if [ -n "${BUCKET_SUFFIX}" ] && [[ "${bucket}" != *"${BUCKET_SUFFIX}"  ]] ; then
       mv "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}" "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket}${BUCKET_SUFFIX}"
       bucket="${bucket}${BUCKET_SUFFIX}"
     fi
-    if ${MC} "${MC_OPTS[@]}" ls wdminio | grep ${bucket} > /dev/null ; then
-      if [ -n "$(${MC} "${MC_OPTS[@]}" ls wdminio/${bucket}/)" ] ; then
-        ${MC} "${MC_OPTS[@]}" --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
+    if "${MC}" "${MC_OPTS[@]}" ls wdminio | grep ${bucket} > /dev/null ; then
+      if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${bucket}/)" ] ; then
+        "${MC}" "${MC_OPTS[@]}" --quiet rm --recursive --force --dangerous "wdminio/${bucket}/" > /dev/null
       fi
       if [ "${bucket}" = "discovery-dfs" ] ; then
         continue
       fi
       set +e
-      ${MC} "${MC_OPTS[@]}" --quiet mirror ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      "${MC}" "${MC_OPTS[@]}" mirror "${MIRROR_OPTS[@]}" ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}/${bucket} wdminio/${bucket} &>> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
       RC=$?
       echo "RC=${RC}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
       if [ $RC -ne 0 ] ; then

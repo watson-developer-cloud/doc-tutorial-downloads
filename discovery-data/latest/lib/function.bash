@@ -42,9 +42,17 @@ trap_add(){
   trap "${cmd}" 0 1 2 3 15
 }
 
-trap_remove(){
-  # Remove $1 command from 'trap_commands'.
-  trap_commands=( "${trap_commands[@]/$1}" )
+trap_remove() {
+  local element_to_remove="$1"
+
+  # Remove element_to_remove from trap_commands array.
+  new_trap_commands=()
+  for element in "${trap_commands[@]}"; do
+    if [[ "$element" != "$element_to_remove" ]]; then
+      new_trap_commands+=("$element")
+    fi
+  done
+  trap_commands=("${new_trap_commands[@]}")
 
   # NOTE: if 'trap_commands' is empty, "${trap_commands}" cause unbound variable error when set -u.
   if [[ -z "${trap_commands[@]}" ]]; then
@@ -142,6 +150,8 @@ get_version(){
   fi
 }
 
+# Usage: compare_version VER_1 VER_2.
+# Output: return -1 if VER_1 < VER_2, 0 if VER_1 == VER_2, and +1 if VER_1 > VER_2.
 compare_version(){
   VER_1=(${1//./ })
   VER_2=(${2//./ })
@@ -397,6 +407,62 @@ get_mc(){
   fi
 }
 
+# Compare two timestamps (i.e. 2024-06-12T14:34:03Z).
+# Return 1 if timestamp1 > timestamp2 else 0.
+compare_timestamps() {
+  local timestamp1="$1"
+  local timestamp2="$2"
+
+  # Convert timestamps to seconds since epoch
+  local epoch1=$(date -d "$timestamp1" +%s)
+  local epoch2=$(date -d "$timestamp2" +%s)
+
+  # Compare the two epoch values
+  if [ "$epoch1" -gt "$epoch2" ]; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+# Extract timestamp from `mc --version` output.
+get_mc_version() {
+  local version_output
+  version_output=$("${MC}" --version 2>/dev/null)
+
+  local timestamp
+  timestamp=$(echo "$version_output" | grep -oP '(?<=mc version RELEASE\.)[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z')
+
+  if [[ -z "$timestamp" ]]; then
+    echo "Error extracting timestamp"
+    return 1
+  fi
+
+  # Correct format (replace hyphens with colons only in time part).
+  timestamp=$(echo "$timestamp" | sed -E 's/(T[0-9]{2})-([0-9]{2})-([0-9]{2}Z)/\1:\2:\3/')
+  echo "$timestamp"
+}
+
+# Judge if the --retry option is available in mc mirror command.
+# If the option is available return 1 else 0.
+has_mc_mirror_retry() {
+  local timestamp_current
+  local timestamp_comparison="2023-10-24T05:18:28Z"
+
+  timestamp_current=$(get_mc_version)
+
+  if [[ $? -ne 0 ]]; then
+    echo "Error extracting timestamp"
+    return 1
+  fi
+
+  if [ "$(compare_timestamps "$timestamp_current" "$timestamp_comparison")" -eq 1 ]; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
 start_minio_port_forward(){
   touch ${TMP_WORK_DIR}/keep_minio_port_forward
   trap "rm -f ${TMP_WORK_DIR}/keep_minio_port_forward" 0 1 2 3 15
@@ -408,7 +474,7 @@ keep_minio_port_forward(){
   while [ -e ${TMP_WORK_DIR}/keep_minio_port_forward ]
   do
     if [ -n "${S3_NAMESPACE+UNDEF}" ] ; then
-      oc ${OC_ARGS} -n "${S3_NAMESPACE}" port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-forward.log" &
+      oc ${OC_ARGS} -n "${S3_NAMESPACE}" port-forward "svc/${S3_PORT_FORWARD_SVC}" "${S3_FORWARD_PORT}:${S3_PORT}" &>> "${BACKUP_RESTORE_LOG_DIR}/port-forward.log" &
     else
       oc ${OC_ARGS} port-forward svc/${S3_PORT_FORWARD_SVC} ${S3_FORWARD_PORT}:${S3_PORT} &>> "${BACKUP_RESTORE_LOG_DIR}/port-forward.log" &
     fi
@@ -488,7 +554,7 @@ Backup/Restore failed.
 You can restart ${COMMAND} with adding "--continue-from" option:
   ex) ./all-backup-restore.sh ${COMMAND} -f ${BACKUP_FILE} --continue-from ${CURRENT_COMPONENT} ${RETRY_ADDITIONAL_OPTION:-}
 You can unquiesce WatsonDiscovery by this command:
-  oc patch wd wd --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
+  oc patch wd ${TENANT_NAME} --type merge --patch '{"spec": {"shared": {"quiesce": {"enabled": false}}}}'
 EOS
 )
   brlog "ERROR" "${message}"
@@ -577,10 +643,10 @@ get_migrator_image(){
   if [ $(compare_version "${wd_version}" "4.6.0") -le 0 ] ; then
     echo "$(get_migrator_repo):${MIGRATOR_TAG:-$(get_migrator_tag)}"
   else
-    utils_repo="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.dockerRegistryPrefix}')"
-    utils_image="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.name}')"
-    utils_tag="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.tag}')"
-    utils_digest="$(oc get watsondiscoveryapi wd -o jsonpath='{.spec.shared.initContainer.utils.image.digest}')"
+    utils_repo="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.dockerRegistryPrefix}')"
+    utils_image="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.name}')"
+    utils_tag="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.tag}')"
+    utils_digest="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.digest}')"
     echo "${utils_repo}/${utils_image}:${utils_tag}@${utils_digest}"
   fi
 }
@@ -1351,7 +1417,7 @@ create_restore_instance_mappings(){
       fi
     done
   else
-    brlog "INFO" "No Discovery instance exist. Create new one."
+    brlog "INFO" "No Discovery instance exist. Creating a new one."
     local src_instances=( $(fetch_cmd_result ${ZEN_ACCESS_POD} "jq -r '.instance_mappings[].source_instance_id' /tmp/mapping.json") )
     local display_names=( $(fetch_cmd_result ${ZEN_ACCESS_POD} "jq -r '.instance_mappings[].display_name' /tmp/mapping.json") )
     for i in "${!src_instances[@]}"
@@ -1375,7 +1441,7 @@ create_restore_instance_mappings(){
 }
 
 check_instance_mappings(){
-  brlog "INFO" "Check instance mapping"
+  brlog "INFO" "Checking instance mapping"
   if [ -z "${MAPPING_FILE:+UNDEF}" ] ; then
     brlog "INFO" "Mapping file is not specified"
     export MAPPING_FILE="${BACKUP_DIR}/instance_mapping.json"
@@ -1466,11 +1532,11 @@ create_service_instance(){
     fi
   fi
   if [ -z "${ZEN_UID+UNDEF}" ] ; then
-    brlog "INFO" "Get CP4D user ID for ${ZEN_USER_NAME}" >&2
+    brlog "INFO" "Getting CP4D user ID for ${ZEN_USER_NAME}" >&2
     token="$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")"
     ZEN_UID="$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/openapi/v1/users/${ZEN_USER_NAME}' -H 'Authorization: Bearer ${token}' | jq -r '.UserInfo.uid'")"
   fi
-  brlog "INFO" "Create Discovery instance as ${ZEN_USER_NAME}:${ZEN_UID}" >&2
+  brlog "INFO" "Creating Discovery instance as ${ZEN_USER_NAME}:${ZEN_UID}" >&2
   local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_UID}&username=${ZEN_USER_NAME}&display_name=${ZEN_USER_NAME}' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
   local instance_id=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks -X POST '${WATSON_GATEWAY_ENDPOINT}/api/ibmcloud/resource-controller/resource_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r 'if .zen_id == null or .zen_id == \"\" then \"null\" else .zen_id end'")
   if [ "${instance_id}" != "null" ] ; then
