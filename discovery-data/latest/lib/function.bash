@@ -926,8 +926,10 @@ get_pg_configmap(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ $(compare_version "${wd_version}" "2.2.1") -le 0 ] ; then
     echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}")
-  else
+  elif [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ] ; then
     echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres -o jsonpath="{.items[0].metadata.name}")
+  else
+    echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres16 -o jsonpath="{.items[0].metadata.name}")
   fi
 }
 
@@ -935,8 +937,10 @@ get_pg_secret(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ $(compare_version "${wd_version}" "2.2.1") -le 0 ] ; then
     echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}")
-  else
+  elif [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ] ; then
     echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres-wd")
+  else
+    echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres16 -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres16-wd")
   fi
 }
 
@@ -1124,7 +1128,9 @@ require_mt_mt_migration(){
 
 get_primary_pg_pod(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  if [ $(compare_version "${wd_version}" "5.0.0") -ge 0 ] ; then
+  if [ $(compare_version "${wd_version}" "5.1.0") -ge 0 ] ; then
+    echo "$(oc get pod ${OC_ARGS} -l "icpdsupport/podSelector=discovery-cn-postgres16,role=primary" -o jsonpath='{.items[0].metadata.name}')"
+  elif [ $(compare_version "${wd_version}" "5.0.0") -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "icpdsupport/podSelector=discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
   elif [ $(compare_version "${wd_version}" "4.0.0") -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "postgresql=${TENANT_NAME}-discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
@@ -1181,9 +1187,9 @@ launch_s3_pod(){
   if [ -n "${DISABLE_MC_MULTIPART:+UNDEF}" ] ; then add_env_to_job_yaml "DISABLE_MC_MULTIPART" "${DISABLE_MC_MULTIPART}" "${S3_JOB_FILE}"; fi
   add_env_to_job_yaml "TZ" "${TZ_OFFSET}" "${S3_JOB_FILE}"
   add_env_to_job_yaml "WD_VERSION" "${wd_version}" "${S3_JOB_FILE}"
+  add_env_to_job_yaml "S3_BUCKETS" "${S3_BUCKETS}" "${S3_JOB_FILE}"
   add_volume_to_job_yaml "backup-restore-workspace" "${TMP_PVC_NAME:-emptyDir}" "${S3_JOB_FILE}"
   if [ $(compare_version ${wd_version} "4.7.0") -ge 0 ] ; then
-    BUCKET_SUFFIX="$(get_bucket_suffix)"
     S3_CERT_SECRET=$(oc get secret -l "icpdsupport/addOnId=discovery,icpdsupport/app=s3-cert-secret,tenant=${TENANT_NAME}" -o jsonpath="{.items[0].metadata.name}")
     add_secret_volume_to_job_yaml "tls-secret" "${S3_CERT_SECRET}" "${S3_JOB_FILE}"
     add_volume_mount_to_job_yaml "tls-secret" "${S3_CERT_MOUNT_PATH}" "${S3_JOB_FILE}"
@@ -1208,6 +1214,7 @@ setup_s3_env(){
     S3_CONFIGMAP=${S3_CONFIGMAP:-$(oc get ${OC_ARGS} cm -l "app.kubernetes.io/component=s3,tenant=${TENANT_NAME}" -o jsonpath="{.items[*].metadata.name}")}
     S3_SECRET=${S3_SECRET:-$(oc ${OC_ARGS} get secret -l "tenant=${TENANT_NAME},run=s3-auth" -o jsonpath="{.items[*].metadata.name}" | tr -s '[[:space:]]' '\n' | grep s3)}
   fi
+  BUCKET_SUFFIX="${BUCKET_SUFFIX:-$(get_bucket_suffix)}"
   S3_SVC=${S3_SVC:-$(oc extract ${OC_ARGS} configmap/${S3_CONFIGMAP} --keys=host --to=- 2> /dev/null)}
   if [[ "${S3_SVC}" == *"."* ]] ; then
     array=(${S3_SVC//./ })
@@ -1222,6 +1229,7 @@ setup_s3_env(){
   S3_FORWARD_PORT=${S3_FORWARD_PORT:-39001}
   S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-https://localhost:$S3_FORWARD_PORT}
   S3_JOB_FILE="${SCRIPT_DIR}/src/s3-backup-restore-job.yml"
+  S3_BUCKETS=${S3_BUCKETS:-$(get_s3_buckets)}
 }
 
 check_datastore_available(){
@@ -1261,7 +1269,7 @@ validate_elastic_version() {
     elif [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
       brlog "INFO" "Elasticsearch 6 will be reindexed after quiescing."
     else
-      brlog "ERROR" "Detected old index created in ElasticSearch 6 that is not supported Watson Discovery 4.8.x. They have to be reindexed if you restore to 4.8.x or higher. Reindex actually won't change your data, but it takes time. Run backup script with '--reindex-old-index' option if you reindex them. You can proceed backup without reindex, but you can't restore the backup data to 4.8.x. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
+      brlog "ERROR" "Detected old index created in ElasticSearch 6 that is not supported in Watson Discovery 4.8.x. They have to be reindexed if you want to restore to 4.8.x or higher. Reindex actually won't change your data, but it takes time. Run the backup script with '--reindex-old-index' option if you want to reindex them. You can proceed the backup without reindex, but you can't restore the backup data to 4.8.x. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
       exit 1
     fi
   fi 
@@ -1711,4 +1719,21 @@ restart_job(){
       fi
     done
   done
+}
+
+get_s3_buckets(){
+  local s3_buckets
+  if [ $(compare_version ${wd_version} "4.7.0") -lt 0 ] ; then
+    s3_buckets=$(oc get ${OC_ARGS} miniocluster ${TENANT_NAME}-minio -o jsonpath='{.spec.buckets[*].name}')
+  else
+    bucket_job=$(oc get ${OC_ARGS} job -l "discovery.ibm.com/component=s3-bucket-job,tenant=${TENANT_NAME}" -o jsonpath='{.items[0].metadata.name}')
+    s3_buckets=$(oc get ${OC_ARGS} job "${bucket_job}" -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="S3_BUCKETS")].value}')
+  fi
+  # sdu is not in this list. Add manually.
+  # BUCKET_SUFFIX is empty in version < 4.7.0
+  if ! echo "${s3_buckets}" | grep "sdu${BUCKET_SUFFIX}" > /dev/null ; then
+    echo -n "${s3_buckets} sdu${BUCKET_SUFFIX}"
+  else
+    echo -n "${s3_buckets}"
+  fi
 }
