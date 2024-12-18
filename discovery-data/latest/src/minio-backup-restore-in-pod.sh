@@ -43,6 +43,7 @@ if "${DISABLE_MC_MULTIPART:-true}" ; then
 fi
 
 BUCKET_SUFFIX="${BUCKET_SUFFIX:-}"
+S3_BUCKETS=${S3_BUCKETS:-}
 
 # backup
 if [ "${COMMAND}" = "backup" ] ; then
@@ -54,8 +55,11 @@ if [ "${COMMAND}" = "backup" ] ; then
     EXCLUDE_OBJECTS+=$'\n'
     EXCLUDE_OBJECTS+="$(cat "${SCRIPT_DIR}/src/mcg_exclude_paths")"
   fi
-  for bucket in $("${MC}" "${MC_OPTS[@]}" ls wdminio | sed ${SED_REG_OPT} "s|.*[0-9]+B\ (.*)/.*|\1|g" | grep -v ${ELASTIC_BACKUP_BUCKET})
+  for bucket in ${S3_BUCKETS//,/ }
   do
+    if [ "${bucket}" == "${ELASTIC_BACKUP_BUCKET}" ] ; then
+      continue
+    fi
     EXTRA_MC_MIRROR_COMMAND=()
     ORG_IFS=${IFS}
     IFS=$'\n'
