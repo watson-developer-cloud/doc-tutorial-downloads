@@ -150,6 +150,12 @@ get_version(){
   fi
 }
 
+# Return the major version, for instance if version is 4.x.y, return 4.
+major_version() {
+  local version="$1"
+  echo "${version%%.*}"
+}
+
 # Usage: compare_version VER_1 VER_2.
 # Output: return -1 if VER_1 < VER_2, 0 if VER_1 == VER_2, and +1 if VER_1 > VER_2.
 compare_version(){
@@ -926,7 +932,8 @@ get_pg_configmap(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ $(compare_version "${wd_version}" "2.2.1") -le 0 ] ; then
     echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app.kubernetes.io/component=postgres-cxn -o jsonpath="{.items[0].metadata.name}")
-  elif [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ] ; then
+  elif { [ $(major_version "${wd_version}") -eq 4 ] && [ $(compare_version "${wd_version}" "4.8.8") -lt 0 ]; } ||
+    { [ $(major_version "${wd_version}") -eq 5 ] && [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ]; }; then
     echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres -o jsonpath="{.items[0].metadata.name}")
   else
     echo $(oc get ${OC_ARGS} configmap -l tenant=${TENANT_NAME},app=cn-postgres16 -o jsonpath="{.items[0].metadata.name}")
@@ -937,7 +944,8 @@ get_pg_secret(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ $(compare_version "${wd_version}" "2.2.1") -le 0 ] ; then
     echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},cr=${TENANT_NAME}-discovery-postgres -o jsonpath="{.items[*].metadata.name}")
-  elif [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ] ; then
+  elif { [ $(major_version "${wd_version}") -eq 4 ] && [ $(compare_version "${wd_version}" "4.8.8") -lt 0 ]; } ||
+    { [ $(major_version "${wd_version}") -eq 5 ] && [ $(compare_version "${wd_version}" "5.1.0") -lt 0 ]; }; then
     echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres-wd")
   else
     echo $(oc ${OC_ARGS} get secret -l tenant=${TENANT_NAME},run=cn-postgres16 -o jsonpath="{.items[*].metadata.name}" | tr '[[:space:]]' '\n' | grep "cn-postgres16-wd")
@@ -1128,7 +1136,8 @@ require_mt_mt_migration(){
 
 get_primary_pg_pod(){
   local wd_version=${WD_VERSION:-$(get_version)}
-  if [ $(compare_version "${wd_version}" "5.1.0") -ge 0 ] ; then
+  if { [ $(major_version "${wd_version}") -eq 4 ] && [ $(compare_version "${wd_version}" "4.8.8") -ge 0 ]; } ||
+    { [ $(major_version "${wd_version}") -eq 5 ] && [ $(compare_version "${wd_version}" "5.1.0") -ge 0 ]; }; then
     echo "$(oc get pod ${OC_ARGS} -l "icpdsupport/podSelector=discovery-cn-postgres16,role=primary" -o jsonpath='{.items[0].metadata.name}')"
   elif [ $(compare_version "${wd_version}" "5.0.0") -ge 0 ] ; then
     echo "$(oc get pod ${OC_ARGS} -l "icpdsupport/podSelector=discovery-cn-postgres,role=primary" -o jsonpath='{.items[0].metadata.name}')"
