@@ -61,6 +61,8 @@ fi
 
 mkdir -p ${TMP_WORK_DIR}/.mc
 MC=mc
+# Need to export HOME on OCP 4.18　which is used to configure the default mc config directory.
+export HOME="${TMP_WORK_DIR}"
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
