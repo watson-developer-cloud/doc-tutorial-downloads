@@ -40,7 +40,7 @@ def extract_entities(text):
         IAM_TOKEN = get_iam_token()
     # Prompt
     payload = {
-        'model_id': 'ibm/granite-13b-instruct-v1',
+        'model_id': 'ibm/granite-13b-instruct-v2',
         'input': f'''Act as a webmaster who must extract structured information from emails. Read the below email and extract and categorize each entity. If no entity is found, output "None".
 
 Input:
