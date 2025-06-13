@@ -3,12 +3,15 @@
 set -euo pipefail
 
 UPDATE_DIR="$SCRIPT_DIR/src"
+source "${SCRIPT_DIR}/lib/function.bash"
+
+ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
 
 elastic_updates(){
   if ls "$UPDATE_DIR"/*.elupdate &> /dev/null ; then
     for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate; do
       value=$(<${ELASTIC_COMMAND})
-      oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
+      oc ${OC_ARGS} exec ${ELASTIC_POD} -c "${ELASTIC_POD_CONTAINER}" -- bash -c "${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
   if [ $(compare_version "${BACKUP_FILE_VERSION:-$(get_backup_version)}" "2.1.2") -le 0 ] ; then 
@@ -16,8 +19,8 @@ elastic_updates(){
       for ELASTIC_COMMAND in "$UPDATE_DIR"/*.elupdate_script; do
         UPDATE_SCRIPT_NAME=$(basename ${ELASTIC_COMMAND})
         _oc_cp ${ELASTIC_COMMAND} ${ELASTIC_POD}:/tmp/${UPDATE_SCRIPT_NAME} ${OC_ARGS}
-        oc ${OC_ARGS} exec ${ELASTIC_POD} -c elasticsearch -- bash /tmp/${UPDATE_SCRIPT_NAME}
-        oc ${OC_ARGS} exec ${ELASTIC_POD} -c elsaticsearch -- rm /tmp/${UPDATE_SCRIPT_NAME}
+        oc ${OC_ARGS} exec ${ELASTIC_POD} -c "${ELASTIC_POD_CONTAINER}" -- bash /tmp/${UPDATE_SCRIPT_NAME}
+        oc ${OC_ARGS} exec ${ELASTIC_POD} -c "${ELASTIC_POD_CONTAINER}" -- rm /tmp/${UPDATE_SCRIPT_NAME}
       done
     fi
   fi

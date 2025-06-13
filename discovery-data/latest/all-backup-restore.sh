@@ -381,8 +381,10 @@ if ! "${BACKUP_RESTORE_IN_POD:-false}" ; then
 fi
 
 if [ ${COMMAND} = 'backup' ] ; then
-  ELASTIC_VERSION=$(get_elastic_version)
-  validate_elastic_version "$ELASTIC_VERSION"
+  if [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] ; then
+    ELASTIC_VERSION=$(get_elastic_version)
+    validate_elastic_version "${ELASTIC_VERSION}"
+  fi 
   if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
     create_backup_instance_mappings
   fi
@@ -391,15 +393,17 @@ if [ ${COMMAND} = 'backup' ] ; then
       quiesce
     fi
   fi
-  if [[ ${ELASTIC_VERSION} = "ES6" ]] && [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
-    reindex_elastic_es6
-  fi 
+  if [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] ; then
+    if [[ ${ELASTIC_VERSION} = "ES6" ]] && [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
+      reindex_elastic_es6
+    fi 
+  fi
+
   if [ $(compare_version "${WD_VERSION}" "2.1.3") -ge 0 ] ; then
     ALL_COMPONENT=("wddata" "etcd" "postgresql" "elastic" "minio")
   else
     ALL_COMPONENT=("wddata" "etcd" "hdp" "postgresql" "elastic")
   fi
-
   export ALL_COMPONENT
   export VERIFY_COMPONENT=( "${ALL_COMPONENT[@]}")
   BACKUP_FILE=${BACKUP_FILE:-"watson-discovery_$(date "+%Y%m%d_%H%M%S").backup"}
