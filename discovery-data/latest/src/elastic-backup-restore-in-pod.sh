@@ -22,6 +22,7 @@ ELASTIC_REQUEST_TIMEOUT="30m"
 TMP_WORK_DIR="/tmp/backup-restore-workspace"
 CURRENT_COMPONENT="elastic"
 ELASTIC_LOG="${TMP_WORK_DIR}/elastic.log"
+ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
 
 # Need to export HOME on OCP 4.18　which is used to configure the default mc config directory.
 export HOME="${TMP_WORK_DIR}"
@@ -106,7 +107,7 @@ EOF
       break;
     else
       # comment out the progress because it shows always 0 until it complete.
-      # brlog "INFO" "Progress: $(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -c ".snapshots[0].shards"' ${OC_ARGS} -c elasticsearch)"
+      # brlog "INFO" "Progress: $(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -c ".snapshots[0].shards"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")"
       sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
     fi
   done
@@ -197,7 +198,7 @@ EOF
   if [ "${ELASTIC_WAIT_GREEN_STATE}" = "true" ] ; then
     brlog "INFO" "Wait for the ElasticSearch to be Green State"
     while true;
-    cluster_status=$(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch)
+    cluster_status=$(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
     do
       if [ "${cluster_status}" = "green" ] ; then
         break;

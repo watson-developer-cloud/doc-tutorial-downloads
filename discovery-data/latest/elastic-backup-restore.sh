@@ -10,7 +10,8 @@ source "${SCRIPT_DIR}/lib/restore-updates.bash"
 source "${SCRIPT_DIR}/lib/function.bash"
 
 OC_ARGS="${OC_ARGS:-}"
-ELASTIC_REPO="my_backup"
+ELASTIC_REPO=$(get_elastic_repo)
+ELASTIC_REPO_LOCATION=$(get_elastic_repo_location)
 ELASTIC_SNAPSHOT="snapshot"
 ELASTIC_SNAPSHOT_PATH="es_snapshots"
 ELASTIC_BACKUP="elastic_snapshot.tar.gz"
@@ -33,13 +34,233 @@ printUsage() {
 }
 
 get_recovery_status(){
-  fetch_cmd_result ${ELASTIC_POD} 'rm -f /tmp/recovery_status.json && export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" > /tmp/recovery_status.json && cat /tmp/recovery_status.json' ${OC_ARGS} -c elasticsearch
+  fetch_cmd_result ${ELASTIC_POD} 'rm -f /tmp/recovery_status.json && export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_recovery" > /tmp/recovery_status.json && cat /tmp/recovery_status.json' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+}
+
+# Applies to: 4.7.0 <= WD_VERSION < 5.2.0.
+mount_pvc_to_elasitc() {
+  # Create shared PVC named as ELASTIC_SHARED_PVC if it's not defined or created
+  create_elastic_shared_pvc
+  # Mount the shared volume
+  oc ${OC_ARGS} patch wd "${TENANT_NAME}" --type merge --patch "{\"spec\": {\"elasticsearch\": {\"sharedStoragePvc\": \"${ELASTIC_SHARED_PVC}\"}}}"
+  ELASTIC_DATA_STS=$(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME},ibm-es-data=True" -o jsonpath='{.items[*].metadata.name}')
+  while :
+  do
+    test -n "$(oc ${OC_ARGS} get sts ${ELASTIC_DATA_STS} -o jsonpath="{..volumes[?(@.persistentVolumeClaim.claimName==\"${ELASTIC_SHARED_PVC}\")]}")" && break
+    brlog "INFO" "Wait for ElasticSearch to mount shared PVC"
+    sleep 30
+  done
+
+  # Scaling down elastic search operator to edit configmap of Elastic
+  brlog "INFO" "Scale down ElasticSearch operator"
+  ELASTIC_VERSION=$(oc ${OC_ARGS} get elasticsearchcluster "${TENANT_NAME}" -o jsonpath='{.status.version}')
+  ELASTIC_OPERATOR_DEPLOY=( $(oc get deploy -A -l "olm.owner=ibm-elasticsearch-operator.v${ELASTIC_VERSION}" | tail -n1 | awk '{print $1,$2}') )
+  oc ${OC_ARGS} scale deploy -n "${ELASTIC_OPERATOR_DEPLOY[0]}" "${ELASTIC_OPERATOR_DEPLOY[1]}" --replicas=0
+  trap_add "oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1"
+  sleep 30
+
+  # Update configmap
+  brlog "INFO" "Update ConfigMap for ElastisSearch configuration"
+  oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
+  for cm in $(oc ${OC_ARGS} get cm -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -v "cpdbr")
+  do
+    update_elastic_configmap "${cm}"
+  done
+
+  # Restart elasticsearch resources to apply the configuration
+  brlog "INFO" "Restart Statefulset"
+  for sts in $(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{.items[*].metadata.name}')
+  do
+    oc ${OC_ARGS} rollout restart sts "${sts}"
+  done
+  for sts in $(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{.items[*].metadata.name}')
+  do
+    oc ${OC_ARGS} rollout status sts "${sts}"
+  done
+
+  # Wait for elasticsearch to be ready
+  while :
+  do
+    check_elastic_available && break
+    brlog "INFO" "Wait for ElasticSearhch to be ready"
+    sleep 30
+  done
+}
+
+delete_snapshot() {
+  local snapshot="$1"
+  brlog "DEBUG" "Delete snapshot: ${snapshot}"
+  cmd='curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${snapshot}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'"'
+  run_cmd_in_pod ${ELASTIC_POD} "${cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  snapshot_delete_result=$(get_last_cmd_result_in_pod)
+  brlog "DEBUG" "snapshot_delete_result: ${snapshot_delete_result}"
+  if ! echo "${snapshot_delete_result}" | grep -Eq "acknowledged|snapshot_missing_exception|repository_missing_exception"; then
+    brlog "ERROR" "Could not delete the snapshot ${snapshot}"
+    exit 1
+  fi
+}
+
+delete_all_snapshots() {
+  brlog "DEBUG" "Delete existing snapshots under ${ELASTIC_REPO} repository"
+  cmd='curl -X GET -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cat/snapshots/'${ELASTIC_REPO}'?h=status,id&s=end_epoch" | awk '\''{ print $2 }'\'''
+  run_cmd_in_pod ${ELASTIC_POD} "${cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  old_snapshots=$(get_last_cmd_result_in_pod)
+  if echo "${old_snapshots}" | grep -q "repository_missing_exception"; then
+    brlog "WARN" "Repository ${ELASTIC_REPO} is missing"
+    return
+  fi 
+  for old_snapshot in $old_snapshots
+  do
+    delete_snapshot "${old_snapshot}"
+    sleep 10
+  done
+  brlog "DEBUG" "Deleted all existing snapshots"
+}
+
+reset_repo() {
+  # Clean up the shared storage, which stores the snapshot files.
+  brlog "DEBUG" "Reset the snapshot repository"
+  brlog "DEBUG" "ELASTIC_REPO_LOCATION: $ELASTIC_REPO_LOCATION"
+
+  # Clean up existing snapshots and related files.
+  delete_all_snapshots
+  run_cmd_in_pod ${ELASTIC_POD} "rm -rf ${ELASTIC_REPO_LOCATION}/*" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  
+  if [ $(compare_version ${WD_VERSION} "5.2.0") -ge 0 ]; then
+    # Delete repo.
+    cmd='curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} ${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}''
+    run_cmd_in_pod ${ELASTIC_POD} "${cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    result=$(get_last_cmd_result_in_pod)
+    brlog "DEBUG" "Delete repo result: ${result}"
+    if ! echo "${result}" | grep -Eq "acknowledged|repository_missing_exception"; then
+      brlog "ERROR" "Could not delete the existing repository. Check the cluster status, and if the problem persist please contact support."
+      clean_up
+      exit 1
+    fi
+    # Add repo.
+    cmd='curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} \
+      ${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}' \
+      -H "Content-Type: application/json" -d"{\"type\": \"fs\",\"settings\": {\"location\": \"'${ELASTIC_REPO_LOCATION}'\"}}"'
+    run_cmd_in_pod ${ELASTIC_POD} "${cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    result=$(get_last_cmd_result_in_pod)
+    brlog "DEBUG" "Add repo result: ${result}"
+    if ! echo "${result}" | grep -q "acknowledged"; then
+      brlog "ERROR" "Could not create the repository. Check the cluster status, and if the problem persist please contact support."
+      clean_up
+      exit 1
+    fi
+  fi
+}
+
+take_snapshot() {
+  elastic_env_variables=""
+  if [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+    elastic_env_variables+='export S3_HOST='${S3_SVC}' && \
+      export S3_PORT='${S3_PORT}' && \
+      export S3_ELASTIC_BACKUP_BUCKET='${ELASTIC_BACKUP_BUCKET}' && \
+      export ELASTIC_ENDPOINT=https://localhost:9200 && \
+      S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g") '
+  fi
+
+  brlog "INFO" "Adding repository to store the snapshot"
+  add_repo_cmd="${elastic_env_variables:-true}"
+  add_repo_cmd+='&& curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} \
+    "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" \
+    -H "Content-Type: application/json" '${REPO_CONFIGURATION}''
+  run_cmd_in_pod ${ELASTIC_POD} "${add_repo_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  result=$(get_last_cmd_result_in_pod)
+  brlog "DEBUG" "Create repo request result: ${result}"
+  if ! echo "${result}" | grep -q "acknowledged"; then
+    brlog "ERROR" "Could not create the repository. Check the cluster status, and if the problem persist please contact support."
+    clean_up
+    exit 1
+  fi
+
+  brlog "INFO" "Taking snapshot"
+  request_snapshot_cmd="${elastic_env_variables:-true}"
+  request_snapshot_cmd+='&& curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} \
+    "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" \
+    -H "Content-Type: application/json" -d'"'"'{"indices": "*","ignore_unavailable": true,"include_global_state": false}'"'"' '
+  run_cmd_in_pod ${ELASTIC_POD} "${request_snapshot_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  result=$(get_last_cmd_result_in_pod)
+  brlog "DEBUG" "Snapshot request result: ${result}"
+  if ! echo "${result}" | grep -q "accepted"; then
+    brlog "ERROR" "Cluster did not accept the snapshot request. Check the cluster status, and if the problem persist please contact support."
+    clean_up
+    exit 1
+  fi
+  brlog "INFO" "Requested snapshot"
+}
+
+function clean_up(){
+  # Snapshot inside of the cluster is no longer needed as they are copied to the local file system.
+  if ! "${KEEP_SNAPSHOT:-false}" ; then
+    brlog "INFO" "Clean up"
+    brlog "INFO" "Delete snapshot"
+
+    if [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
+      retry_count=0 && \
+      while true; \
+      do\
+        if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then\
+          sleep 60;\
+          retry_count=$((retry_count += 1));\
+        else\
+          break;\
+        fi;\
+      done ' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+      echo
+    else
+      reset_repo
+    fi 
+
+    if [ $(compare_version ${WD_VERSION} "4.8.6") -lt 0 ]; then
+      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
+      curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    fi
+
+    if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
+      start_minio_port_forward
+      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
+      stop_minio_port_forward
+      echo
+    elif [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ] ; then
+      run_cmd_in_pod ${ELASTIC_POD} "rm -rf ${ELASTIC_REPO_LOCATION}/*" -c "${ELASTIC_POD_CONTAINER}"
+      oc ${OC_ARGS} patch wd "${TENANT_NAME}" --type json --patch "[{ \"op\": \"remove\", \"path\": \"/spec/elasticsearch/sharedStoragePvc\" }]"
+      while :
+      do
+        test -z "$(oc ${OC_ARGS} get elasticsearchcluster "${TENANT_NAME}" -o jsonpath='{.spec.sharedStoragePVC}')" && break
+        brlog "INFO" "Wait for sharedStoragePVC is set to None"
+        sleep 30
+      done
+      brlog "INFO" "Delete statefulset and job of ElasticSearch to rebuld them"
+      oc ${OC_ARGS} delete sts,job -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}"
+      if [ "${ELASTIC_SHARED_PVC}" = "${ELASTIC_SHARED_PVC_DEFAULT_NAME:-}" ] ; then
+        brlog "INFO" "Delete PVC created for ElasticSearch: ${ELASTIC_SHARED_PVC_DEFAULT_NAME}"
+        oc ${OC_ARGS} delete pvc "${ELASTIC_SHARED_PVC_DEFAULT_NAME}"
+      fi
+      oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1
+      trap_remove "oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1"
+      brlog "INFO" "Waiting for ElasticSearch pod start up"
+      while :
+      do
+        oc ${OC_ARGS} get sts "${ELASTIC_DATA_STS}" &> /dev/null && break
+        brlog "INFO" "Wait for ElasticSearch statefulset"
+        sleep 30
+      done
+      oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
+    fi
+  fi
 }
 
 if [ $# -lt 2 ] ; then
   printUsage
 fi
 
+###############
+# Parse args
+###############
 COMMAND=$1
 shift
 TENANT_NAME=$1
@@ -52,72 +273,48 @@ do
   esac
 done
 
-BACKUP_FILE=${BACKUP_FILE:-"elastic_$(date "+%Y%m%d_%H%M%S").snapshot"}
 
+###############
+# Prepare environment
+###############
+brlog "INFO" "Elastic: "
+brlog "INFO" "Tenant name: $TENANT_NAME"
+
+# Set variables.
+WD_VERSION=${WD_VERSION:-$(get_version)}
+BACKUP_FILE=${BACKUP_FILE:-"elastic_$(date "+%Y%m%d_%H%M%S").snapshot"}
 ELASTIC_ARCHIVE_OPTION="${ELASTIC_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
 if [ -n "${ELASTIC_ARCHIVE_OPTION}" ] ; then
   read -a ELASTIC_TAR_OPTIONS <<< ${ELASTIC_ARCHIVE_OPTION}
 else
   ELASTIC_TAR_OPTIONS=("")
 fi
+# Remove -z (gzip) option because it is not installed in the opensearch container.
+if [ $(compare_version ${WD_VERSION} "5.2.0") -ge 0 ]; then
+  ELASTIC_TAR_OPTIONS=($(printf "%s\n" "${ELASTIC_TAR_OPTIONS[@]}" | grep -vxF -- "-z" || true))
+fi 
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
-
-brlog "INFO" "Elastic: "
-brlog "INFO" "Tenant name: $TENANT_NAME"
-
-ELASTIC_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)
-
+ELASTIC_POD=$(get_elastic_pod)
+ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
 setup_s3_env
-
 ELASTIC_BACKUP_BUCKET="$(oc ${OC_ARGS} extract configmap/${S3_CONFIGMAP} --to=- --keys=bucketElasticBackup 2> /dev/null)"
 
 rm -rf ${TMP_WORK_DIR}
 mkdir -p ${TMP_WORK_DIR}
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
 
-WD_VERSION=${WD_VERSION:-$(get_version)}
-if [ $(compare_version ${WD_VERSION} "4.7.0") -ge 0 ] ; then
-  # Create shared PVC if it's not defined or created
-  create_elastic_shared_pvc
-  # Mount shared volume
-  oc ${OC_ARGS} patch wd "${TENANT_NAME}" --type merge --patch "{\"spec\": {\"elasticsearch\": {\"sharedStoragePvc\": \"${ELASTIC_SHARED_PVC}\"}}}"
-  ELASTIC_DATA_STS=$(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME},ibm-es-data=True" -o jsonpath='{.items[*].metadata.name}')
-  while :
-  do
-    test -n "$(oc ${OC_ARGS} get sts ${ELASTIC_DATA_STS} -o jsonpath="{..volumes[?(@.persistentVolumeClaim.claimName==\"${ELASTIC_SHARED_PVC}\")]}")" && break
-    brlog "INFO" "Wait for ElasticSearch to mount shared PVC"
-    sleep 30
-  done
-  # Scaling down elastic search operator to edit configmap of Elastic
-  brlog "INFO" "Scale down ElasticSearch operator"
-  ELASTIC_VERSION=$(oc ${OC_ARGS} get elasticsearchcluster "${TENANT_NAME}" -o jsonpath='{.status.version}')
-  ELASTIC_OPERATOR_DEPLOY=( $(oc get deploy -A -l "olm.owner=ibm-elasticsearch-operator.v${ELASTIC_VERSION}" | tail -n1 | awk '{print $1,$2}') )
-  oc ${OC_ARGS} scale deploy -n "${ELASTIC_OPERATOR_DEPLOY[0]}" "${ELASTIC_OPERATOR_DEPLOY[1]}" --replicas=0
-  trap_add "oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1"
-  sleep 30
-  # Update configmap
-  brlog "INFO" "Update ConfigMap for ElastisSearch configuration"
-  oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
-  for cm in $(oc ${OC_ARGS} get cm -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -v "cpdbr")
-  do
-    update_elastic_configmap "${cm}"
-  done
-  brlog "INFO" "Restart Statefulset"
-  for sts in $(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{.items[*].metadata.name}')
-  do
-    oc ${OC_ARGS} rollout restart sts "${sts}"
-  done
-  for sts in $(oc ${OC_ARGS} get sts -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}" -o jsonpath='{.items[*].metadata.name}')
-  do
-    oc ${OC_ARGS} rollout status sts "${sts}"
-  done
-  while :
-  do
-    check_elastic_available && break
-    brlog "INFO" "Wait for ElasticSearhch to be ready"
-    sleep 30
-  done
+if [ $(compare_version ${WD_VERSION} "4.7.0") -ge 0 ] && [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+  mount_pvc_to_elasitc
+fi
+
+if [ $(compare_version ${WD_VERSION} "5.2.0") -ge 0 ]; then
+  brlog "INFO" "Scale down opensearch operator"
+  OPENSEARCH_CLUSTER=$(get_opensearch_cluster)
+  OPENSEARCH_VERSION=$(oc ${OC_ARGS} get cluster.opensearch ${OPENSEARCH_CLUSTER} -o jsonpath='{.status.release}{"\n"}')
+  OPENSEARCH_OPERATOR_DEPLOY=( $(oc get deploy -A -l "olm.owner=ibm-opensearch-operator.v${OPENSEARCH_VERSION}" | tail -n1 | awk '{print $1,$2}') )
+  oc ${OC_ARGS} scale deploy -n "${OPENSEARCH_OPERATOR_DEPLOY[0]}" "${OPENSEARCH_OPERATOR_DEPLOY[1]}" --replicas=0
+  trap_add "oc ${OC_ARGS} scale deploy -n ${OPENSEARCH_OPERATOR_DEPLOY[0]} ${OPENSEARCH_OPERATOR_DEPLOY[1]} --replicas=1"
 fi
 
 if "${BACKUP_RESTORE_IN_POD}" && [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
@@ -215,80 +412,24 @@ if "${BACKUP_RESTORE_IN_POD}" && [ $(compare_version ${WD_VERSION} "4.7.0") -lt 
 fi
 
 if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
-  mkdir -p ${TMP_WORK_DIR}/.mc
-  if [ -n "${MC_COMMAND+UNDEF}" ] ; then
-    MC=${MC_COMMAND}
-  else
-    get_mc ${TMP_WORK_DIR}
-    MC=${TMP_WORK_DIR}/mc
-  fi
-  export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
-  MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
+  setup_mc
 fi
 
-function clean_up(){
-  if ! "${KEEP_SNAPSHOT:-false}" ; then
-    brlog "INFO" "Clean up"
-    brlog "INFO" "Delete snapshot"
-    run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" || true && \
-    retry_count=0 && \
-    while true; \
-    do\
-      if ! curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" | grep "acknowledged" && [ $retry_count -le 10 ]; then\
-        sleep 60;\
-        retry_count=$((retry_count += 1));\
-      else\
-        break;\
-      fi;\
-    done ' ${OC_ARGS} -c elasticsearch
-    echo
-
-    if [ $(compare_version ${WD_VERSION} "4.8.6") -lt 0 ]; then
-      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
-      curl -XPUT -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": null, \"discovery.zen.publish_timeout\": null}}"' ${OC_ARGS} -c elasticsearch
-    fi
-
-    if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
-      start_minio_port_forward
-      "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
-      stop_minio_port_forward
-      echo
-    else
-      run_cmd_in_pod ${ELASTIC_POD} 'rm -rf /workdir/shared_storage/*' -c elasticsearch
-      oc ${OC_ARGS} patch wd "${TENANT_NAME}" --type json --patch "[{ \"op\": \"remove\", \"path\": \"/spec/elasticsearch/sharedStoragePvc\" }]"
-      while :
-      do
-        test -z "$(oc ${OC_ARGS} get elasticsearchcluster "${TENANT_NAME}" -o jsonpath='{.spec.sharedStoragePVC}')" && break
-        brlog "INFO" "Wait for sharedStoragePVC is set to None"
-        sleep 30
-      done
-      brlog "INFO" "Delete statefulset and job of ElasticSearch to rebuld them"
-      oc ${OC_ARGS} delete sts,job -l "icpdsupport/addOnId=discovery,icpdsupport/app=elastic,tenant=${TENANT_NAME}"
-      if [ "${ELASTIC_SHARED_PVC}" = "${ELASTIC_SHARED_PVC_DEFAULT_NAME:-}" ] ; then
-        brlog "INFO" "Delete PVC created for ElasticSearch: ${ELASTIC_SHARED_PVC_DEFAULT_NAME}"
-        oc ${OC_ARGS} delete pvc "${ELASTIC_SHARED_PVC_DEFAULT_NAME}"
-      fi
-      oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1
-      trap_remove "oc ${OC_ARGS} scale deploy -n ${ELASTIC_OPERATOR_DEPLOY[0]} ${ELASTIC_OPERATOR_DEPLOY[1]} --replicas=1"
-      brlog "INFO" "Waiting for ElasticSearch pod start up"
-      while :
-      do
-        oc ${OC_ARGS} get sts "${ELASTIC_DATA_STS}" &> /dev/null && break
-        brlog "INFO" "Wait for ElasticSearch statefulset"
-        sleep 30
-      done
-      oc ${OC_ARGS} rollout status sts "${ELASTIC_DATA_STS}"
-    fi
-  fi
-}
-
+# Setup repository configuration which defines its snapshot file location.
 if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
   REPO_CONFIGURATION='-d"{\"type\":\"s3\",\"settings\":{\"bucket\":\"${S3_ELASTIC_BACKUP_BUCKET}\",\"region\":\"us-east-1\",\"protocol\":\"https\",\"endpoint\":\"https://${S3_IP}:${S3_PORT}\",\"base_path\":\"es_snapshots\",\"compress\":\"true\",\"server_side_encryption\":\"false\",\"storage_class\":\"reduced_redundancy\"}}"'
 else
-  REPO_CONFIGURATION='-d"{\"type\": \"fs\",\"settings\": {\"location\": \"/workdir/shared_storage\"}}"'
+  REPO_CONFIGURATION='-d"{\"type\": \"fs\",\"settings\": {\"location\": \"'${ELASTIC_REPO_LOCATION}'\"}}"'
 fi
 
-# backup elastic search
+brlog "DEBUG" "BACKUP_FILE: $BACKUP_FILE"
+brlog "DEBUG" "VERIFY_ARCHIVE: $VERIFY_ARCHIVE"
+brlog "DEBUG" "VERIFY_DATASTORE_ARCHIVE: $VERIFY_DATASTORE_ARCHIVE"
+brlog "DEBUG" "REPO_CONFIGURATION: $REPO_CONFIGURATION"
+
+###############
+# Main (Backup)
+###############
 if [ ${COMMAND} = 'backup' ] ; then
   brlog "INFO" "Start backup elasticsearch..."
   mkdir -p ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}
@@ -301,21 +442,20 @@ if [ ${COMMAND} = 'backup' ] ; then
     fi
     stop_minio_port_forward
   else
-    # Clean up shared stoage
-    run_cmd_in_pod ${ELASTIC_POD} 'rm -rf /workdir/shared_storage/*' ${OC_ARGS} -c elasticsearch
+    reset_repo
   fi
-  brlog "INFO" "Taking snapshot..."
-  run_cmd_in_pod ${ELASTIC_POD} 'export S3_HOST='${S3_SVC}' && export S3_PORT='${S3_PORT}' && export S3_ELASTIC_BACKUP_BUCKET='${ELASTIC_BACKUP_BUCKET}' && export ELASTIC_ENDPOINT=https://localhost:9200 && \
-  S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g") && \
-  curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" '"${REPO_CONFIGURATION}"' && \
-  curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d'"'"'{"indices": "*","ignore_unavailable": true,"include_global_state": false}'"'"' && echo' ${OC_ARGS} -c elasticsearch
-  brlog "INFO" "Requested snapshot"
+  take_snapshot
+
+  brlog "DEBUG" "Waiting for snapshot to be created"
   while true;
   do
-    snapshot_status=$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0].state"' ${OC_ARGS} -c elasticsearch)
+    snapshot_status=$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0].state"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
+    
+    # Snapshot is successfuly created, so validate it and save into local file system.
     if [ "${snapshot_status}" = "SUCCESS" ] ; then
       brlog "INFO" "Snapshot successfully finished."
-      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch
+      run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+      
       if [ $(compare_version ${WD_VERSION} "4.7.0") -lt 0 ] ; then
         brlog "INFO" "Transfering snapshot from MinIO"
         cat << EOF >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
@@ -337,18 +477,18 @@ EOF
         fi
         set -e
       else
-        brlog "INFO" "Archiveing snapshot"
-        run_cmd_in_pod "${ELASTIC_POD}" "tar ${ELASTIC_TAR_OPTIONS[*]} --warning=no-file-changed --warning=no-file-removed --exclude ${ELASTIC_BACKUP} -cf /workdir/shared_storage/${ELASTIC_BACKUP} -C /workdir/shared_storage . || [[ \$? == 1 ]]" -c elasticsearch
-        kube_cp_to_local ${ELASTIC_POD} "${BACKUP_FILE}" "/workdir/shared_storage/${ELASTIC_BACKUP}" ${OC_ARGS} -c elasticsearch
+        # Compress all snapshot files and save into the local file system.
+        brlog "INFO" "Archiveing created snapshot as ${BACKUP_FILE}"
+        run_cmd_in_pod "${ELASTIC_POD}" "tar ${ELASTIC_TAR_OPTIONS[*]} --warning=no-file-changed --warning=no-file-removed --exclude ${ELASTIC_BACKUP} -cf ${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP} -C ${ELASTIC_REPO_LOCATION} . || [[ \$? == 1 ]]" -c "${ELASTIC_POD_CONTAINER}"
+        kube_cp_to_local ${ELASTIC_POD} "${BACKUP_FILE}" "${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
       fi
       break;
     elif [ "${snapshot_status}" = "FAILED" -o "${snapshot_status}" = "PARTIAL" ] ; then
       brlog "ERROR" "Snapshot failed"
-      brlog "INFO" "$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c elasticsearch)"
+      brlog "INFO" "$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -r ".snapshots[0]"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")"
       break;
     else
-      # comment out the progress because it shows always 0 until it complete.
-      # brlog "INFO" "Progress: $(fetch_cmd_result ${ELASTIC_POD} 'curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'" | jq -c ".snapshots[0].shards"' ${OC_ARGS} -c elasticsearch)"
+      brlog "INFO" "snapshot status: ${snapshot_status}. Retrying in ${ELASTIC_STATUS_CHECK_INTERVAL} seconds."
       sleep ${ELASTIC_STATUS_CHECK_INTERVAL}
     fi
   done
@@ -363,9 +503,12 @@ EOF
     exit 1
   fi
   echo
-  brlog "INFO" "Done: ${BACKUP_FILE}"
+  brlog "INFO" "Backup file '${BACKUP_FILE}' successfully created."
 fi
 
+###############
+# Main (Restore)
+###############
 if [ "${COMMAND}" = 'restore' ] ; then
   if [ -z "${BACKUP_FILE}" ] ; then
     printUsage
@@ -409,22 +552,80 @@ EOF
     fi
     set -e
   else
-    run_cmd_in_pod ${ELASTIC_POD} 'rm -rf /workdir/shared_storage/*' ${OC_ARGS} -c elasticsearch
-    kube_cp_from_local ${ELASTIC_POD} "${BACKUP_FILE}" "/workdir/shared_storage/${ELASTIC_BACKUP}" ${OC_ARGS} -c elasticsearch
-    run_cmd_in_pod ${ELASTIC_POD} "tar ${ELASTIC_TAR_OPTIONS[*]} -xmpf /workdir/shared_storage/${ELASTIC_BACKUP} -C /workdir/shared_storage && rm -f /workdir/shared_storage/${ELASTIC_BACKUP}" ${OC_ARGS} -c elasticsearch
+    # Copy the snapshot file into the elastic pod.
+    reset_repo
+    if file "$BACKUP_FILE" | grep -q "gzip compressed data" && [ $(compare_version ${WD_VERSION} "5.2.0") -ge 0 ] ; then
+      # opensearch client pod does not have gzip, so we need to recompress the backup data without gzip.
+      RECOMPRESSED_BACKUP_FILE="$(dirname "${BACKUP_FILE}")/recompressed.backup"
+      gzip_to_plain_tar "${BACKUP_FILE}" "${RECOMPRESSED_BACKUP_FILE}"
+      kube_cp_from_local ${ELASTIC_POD} "${RECOMPRESSED_BACKUP_FILE}" "${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    else
+      kube_cp_from_local ${ELASTIC_POD} "${BACKUP_FILE}" "${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    fi
+    run_cmd_in_pod ${ELASTIC_POD} "tar ${ELASTIC_TAR_OPTIONS[*]} -xmpf ${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP} -C ${ELASTIC_REPO_LOCATION} && rm -f ${ELASTIC_REPO_LOCATION}/${ELASTIC_BACKUP}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
   fi
   brlog "INFO" "Start Restoring snapshot"
 
-  run_cmd_in_pod ${ELASTIC_POD} 'export S3_HOST='${S3_SVC}' && export S3_PORT='${S3_PORT}' && export S3_ELASTIC_BACKUP_BUCKET='${ELASTIC_BACKUP_BUCKET}' && export ELASTIC_ENDPOINT=https://localhost:9200 && \
-  S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g") && \
-  curl -XDELETE --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_all?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
-  curl -XDELETE --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/.*?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
-  curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" '"${REPO_CONFIGURATION}"' && \
-  curl -XPOST --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"indices\": \"*,-application_logs-*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}" | grep accepted && echo ' ${OC_ARGS} -c elasticsearch
+  # Setup the snapshot repository, and send the restore request.
+  elastic_env_variables=""
+  if [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+    elastic_env_variables+='export S3_HOST='${S3_SVC}' && export S3_PORT='${S3_PORT}' && export S3_ELASTIC_BACKUP_BUCKET='${ELASTIC_BACKUP_BUCKET}' && export ELASTIC_ENDPOINT=https://localhost:9200 && \
+      S3_IP=$(curl -kv "https://$S3_HOST:$S3_PORT/minio/health/ready" 2>&1 | grep Connected | sed -E "s/.*\(([0-9.]+)\).*/\1/g") '
+  fi 
+
+  if [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+    reset_timeout_cmd="${elastic_env_variables:-true}"
+    reset_timeout_cmd+='&& curl -XDELETE --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_all?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" && \
+    curl -XDELETE -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/.*?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'"'
+    run_cmd_in_pod ${ELASTIC_POD} "${reset_timeout_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  fi
+
+  set_repo_cmd="${elastic_env_variables:-true}"
+  set_repo_cmd+='&& curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" '${REPO_CONFIGURATION}''
+  run_cmd_in_pod ${ELASTIC_POD} "${set_repo_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  
+  if [ $(compare_version ${WD_VERSION} "5.2.0") -lt 0 ]; then
+    restore_request_cmd="${elastic_env_variables:-true}"
+    restore_request_cmd+='&& curl -XPOST --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" -H "Content-Type: application/json" -d"{\"indices\": \"*,-application_logs-*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}"'
+    run_cmd_in_pod ${ELASTIC_POD} "${restore_request_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  else
+    # WD_VERSION >= 5.2.0 does not allow restore indices which start with `.` due to security reason, so we will have to manually specify the whitelist.
+    # TODO get white list from opensearch cluster CR.
+    whitelist_indices=".ltrstore"
+    restore_whitelist_indices_cmd='curl -XPOST -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} \
+      "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'&wait_for_completion=true" \
+      -H "Content-Type: application/json" \
+      -d"{\"indices\": \"'${whitelist_indices}'\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}"'
+    run_cmd_in_pod ${ELASTIC_POD} "${restore_whitelist_indices_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+    result=$(get_last_cmd_result_in_pod)
+    brlog "DEBUG" "restore whitelist indices result: ${result}"
+    if ! echo "${result}" | grep -Eq '"total":1,"failed":0,"successful":1'; then
+      brlog "ERROR" "Could not restore the ${whitelist_indices} index due to the following error: ${result}. Please check the cluster."
+      clean_up
+      exit 1
+    fi 
+    # Restore remaining indices.
+    restore_request_cmd="${elastic_env_variables:-true}"
+    restore_request_cmd+='&& curl -XPOST -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} \
+      "${ELASTIC_ENDPOINT}/_snapshot/'${ELASTIC_REPO}'/'${ELASTIC_SNAPSHOT}'/_restore?master_timeout='${ELASTIC_REQUEST_TIMEOUT}'" \
+      -H "Content-Type: application/json" \
+      -d"{\"indices\": \"*,-application_logs-*,-.*\", \"expand_wildcards\": \"all\", \"allow_no_indices\": \"true\"}"'
+    run_cmd_in_pod ${ELASTIC_POD} "${restore_request_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  fi 
+
+  # Check if the restore request is successfuly accepted or not.
+  brlog "DEBUG" "Checking restore request"
+  result=$(get_last_cmd_result_in_pod)
+  brlog "DEBUG" "restore snapshot result: ${result}"
+  if ! echo "${result}" | grep -Eq "accepted|acknowledged"; then
+    brlog "ERROR" "Elasticsearch did not accept the restore request. Check the cluster status, and if the problem persist please contact support."
+    clean_up
+    exit 1
+  fi
   
   if [ $(compare_version ${WD_VERSION} "4.8.6") -lt 0 ]; then
     run_cmd_in_pod ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
-    curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" '  ${OC_ARGS} -c elasticsearch
+    curl -XPUT --fail -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/settings" -H "Content-Type: application/json" -d"{\"transient\": {\"discovery.zen.commit_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\", \"discovery.zen.publish_timeout\": \"'${ELASTIC_REQUEST_TIMEOUT}'\"}}" '  ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
   fi
   
   brlog "INFO" "Sent restore request"
@@ -435,7 +636,7 @@ EOF
     recovery_status=$(get_recovery_status)
     brlog "DEBUG" "Recovery Status: ${recovery_status}"
     if [ "${recovery_status}" != "{}" ] ; then
-      tmp_total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
+      tmp_total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
       if [ ${total_shards} -ge ${tmp_total_shards} ] && [ ${tmp_total_shards} -ne 0 ] ; then
         break
       else
@@ -457,8 +658,8 @@ EOF
   while true;
   do
     recovery_status=$(get_recovery_status)
-    total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
-    done_count=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c elasticsearch)
+    total_shards=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq ".[].shards[]" | jq -s ". | length"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
+    done_count=$(fetch_cmd_result ${ELASTIC_POD} 'cat /tmp/recovery_status.json | jq '"'"'.[].shards[] | select(.stage == "DONE")'"'"' | jq -s ". | length"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
     brlog "INFO" "${done_count} shards finished"
     if [ ${done_count} -ge ${total_shards} ] ; then
       break
@@ -469,7 +670,7 @@ EOF
   if [ "${ELASTIC_WAIT_GREEN_STATE}" = "true" ] ; then
     brlog "INFO" "Wait for the ElasticSearch to be Green State"
     while true;
-    cluster_status=$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c elasticsearch)
+    cluster_status=$(fetch_cmd_result ${ELASTIC_POD} 'export ELASTIC_ENDPOINT=https://localhost:9200 && curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | jq -r ".status"' ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}")
     do
       if [ "${cluster_status}" = "green" ] ; then
         break;
@@ -488,6 +689,9 @@ EOF
   echo
 fi
 
+###############
+# Cleanup
+###############
 rm -rf ${TMP_WORK_DIR}
 if [ -z "$(ls tmp)" ] ; then
   rm -rf tmp
