@@ -88,7 +88,8 @@ setup_s3_env
 launch_s3_pod
 MC_POD=${POD}
 
-ELASTIC_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)
+ELASTIC_POD=$(get_elastic_pod)
+ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
 
 brlog "INFO" "Start MT migration"
 
@@ -242,8 +243,8 @@ do
   else
     replica=1
   fi
-  _oc_cp "${SCRIPT_DIR}/src/tenant_index_template.json" "${ELASTIC_POD}:/tmp/tenant_index_template.json" ${OC_ARGS} -c elasticsearch
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/src/elastic-mt-migration.sh" "-s ${src} -t ${dst} --template /tmp/tenant_index_template.json --replica ${replica}" -c elasticsearch
+  _oc_cp "${SCRIPT_DIR}/src/tenant_index_template.json" "${ELASTIC_POD}:/tmp/tenant_index_template.json" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/src/elastic-mt-migration.sh" "-s ${src} -t ${dst} --template /tmp/tenant_index_template.json --replica ${replica}" -c "${ELASTIC_POD_CONTAINER}"
 
 done
 

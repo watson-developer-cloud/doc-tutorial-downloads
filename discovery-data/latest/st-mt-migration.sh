@@ -54,10 +54,11 @@ fetch_cmd_result ${PG_POD} "PGUSER=${PGUSER} PGPASSWORD=${PGPASSWORD} psql -d da
 brlog "INFO" "Correct ElasticSearch Index"
 
 ELASTIC_POD=${ELASTIC_POD:-$(get_elastic_pod)}
-ARCHIVED_SETTINGS=$(fetch_cmd_result ${ELASTIC_POD} 'curl -XGET -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_settings" | jq -r "if ( . | length == 0 ) then \"null\" else .[].settings.archived end" | uniq' -c elasticsearch ${OC_ARGS})
+ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+ARCHIVED_SETTINGS=$(fetch_cmd_result ${ELASTIC_POD} 'curl -XGET -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_settings" | jq -r "if ( . | length == 0 ) then \"null\" else .[].settings.archived end" | uniq' -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS})
 if [ "${ARCHIVED_SETTINGS}" != "null" ] ; then
   brlog "INFO" "Found archived Index."
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/src/reindex_archived_indices.sh" "" -c elasticsearch ${OC_ARGS}
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/src/reindex_archived_indices.sh" "" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
 else
   brlog "INFO" "No archived Index. Skip."
 fi

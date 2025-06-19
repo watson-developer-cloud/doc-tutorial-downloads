@@ -238,6 +238,19 @@ else
   TRANSFER_TAR_OPTIONS=("")
 fi
 
+# Extract gzip compressed file into plain tar file.
+gzip_to_plain_tar() {
+  brlog "DEBUG" "Recompressing file"
+  local original_backup="$1"
+  local recompressed_backup="$2"
+  gunzip -c "${original_backup}" > "${recompressed_backup}"
+  # Debug.
+  original_backup_info=$(ls -lh "${original_backup}")
+  recompressed_backup_info=$(ls -lh "${recompressed_backup}")
+  brlog "DEBUG" "Original backup: ${original_backup_info}"
+  brlog "DEBUG" "Recompressed backup: ${recompressed_backup_info}"
+}
+
 kube_cp_from_local(){
   IS_RECURSIVE=false
   if [ "$1" = "-r" ] ; then
@@ -411,6 +424,18 @@ get_mc(){
     brlog "ERROR" "Not linux os. Can not get mc. Please set your minio client path to environment variable 'MC_COMMAND'"
     exit 1
   fi
+}
+
+setup_mc() {
+  mkdir -p ${TMP_WORK_DIR}/.mc
+  if [ -n "${MC_COMMAND+UNDEF}" ] ; then
+    MC=${MC_COMMAND}
+  else
+    get_mc ${TMP_WORK_DIR}
+    MC=${TMP_WORK_DIR}/mc
+  fi
+  export MINIO_CONFIG_DIR="${PWD}/${TMP_WORK_DIR}/.mc"
+  MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --quiet --insecure)
 }
 
 # Compare two timestamps (i.e. 2024-06-12T14:34:03Z).
@@ -1254,7 +1279,8 @@ check_datastore_available(){
 # Assume there are only version 6 or 7 indices in the cluster.
 get_elastic_version() {
   ELASTIC_POD=$(get_elastic_pod)
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "--dry-run" -c elasticsearch ${OC_ARGS}
+  ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "--dry-run" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
   result=$(get_last_cmd_result_in_pod)
 
   if echo "$result" | grep -q "Skip ElasticSearch 6 index"; then
@@ -1287,7 +1313,8 @@ validate_elastic_version() {
 # Reindex elastic search indices from version 6 to 7.
 reindex_elastic_es6() {
   brlog "INFO" "Reindexing ..."
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "" -c elasticsearch ${OC_ARGS}
+  ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
   brlog "INFO" "Reindex completed. Waiting for ElasticSearch status to be green ..."
   # Wait a few moments for elastic search to be ready after the reindex.
   # TODO: implement waiting logic inside of reindex_es6_indices.sh, and remove the sleep below from this function.
@@ -1341,12 +1368,49 @@ check_postgres_available(){
 }
 
 get_elastic_pod(){
-  echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)"
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.2.0") -lt 0 ] ; then
+    echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)"
+  else 
+    echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=opensearch)"
+  fi
+}
+
+get_elastic_pod_container() {
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.2.0") -lt 0 ] ; then
+    echo "elasticsearch"
+  else
+    echo "opensearch"
+  fi
+}
+
+get_elastic_repo() {
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.2.0") -lt 0 ] ; then
+    echo "my_backup"
+  else
+    echo "cloudpak"
+  fi
+}
+
+get_elastic_repo_location() {
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.2.0") -lt 0 ] ; then
+    echo "/workdir/shared_storage"
+  else
+    echo "/workdir/snapshot_storage"
+  fi
+}
+
+get_opensearch_cluster() {
+  echo "$(oc get cluster.opensearch ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=opensearch)"
 }
 
 check_elastic_available(){
   ELASTIC_POD=$(get_elastic_pod)
-  oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
+  ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+  oc exec ${OC_ARGS} "${ELASTIC_POD}" -c "${ELASTIC_POD_CONTAINER}" -- bash -c 'export ELASTIC_ENDPOINT=https://localhost:9200 && \
   curl -s -k -u ${ELASTIC_USER}:${ELASTIC_PASSWORD} "${ELASTIC_ENDPOINT}/_cluster/health" | grep "\"status\":\"yellow\"\\|\"status\":\"green\"" > /dev/null' || return 1
   return 0
 }
@@ -1355,8 +1419,9 @@ check_s3_available(){
   setup_s3_env
   local wd_version="${WD_VERSION:-$(get_version)}"
   if [ $(compare_version ${wd_version} "4.7.0") -lt 0 ] ; then
-    ELASTIC_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=elastic,ibm-es-data=True)
-    oc exec ${OC_ARGS} "${ELASTIC_POD}" -c elasticsearch -- bash -c "curl -ks 'https://${S3_SVC}:${S3_PORT}/minio/health/ready' -w '%{http_code}' -o /dev/null | grep 200 > /dev/null" || return 1
+    ELASTIC_POD=$(get_elastic_pod)
+    ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+    oc exec ${OC_ARGS} "${ELASTIC_POD}" -c "${ELASTIC_POD_CONTAINER}" -- bash -c "curl -ks 'https://${S3_SVC}:${S3_PORT}/minio/health/ready' -w '%{http_code}' -o /dev/null | grep 200 > /dev/null" || return 1
     return 0
   else
     launch_s3_pod
@@ -1487,10 +1552,12 @@ check_instance_mappings(){
 
 get_instance_tuples(){
   ELASTIC_POD=$(get_elastic_pod)
+  ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+
   local file_name="$(basename "${MAPPING_FILE}")"
-  _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c elasticsearch
-  local mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c elasticsearch) )
-  oc exec -c elasticsearch ${ELASTIC_POD} -- bash -c "rm -f /tmp/mapping.json"
+  _oc_cp "${MAPPING_FILE}" "${ELASTIC_POD}:/tmp/mapping.json" -c "${ELASTIC_POD_CONTAINER}"
+  local mappings=( $(fetch_cmd_result ${ELASTIC_POD} "jq -r '.instance_mappings[] | \"\(.source_instance_id),\(.dest_instance_id)\"' /tmp/mapping.json" -c "${ELASTIC_POD_CONTAINER}") )
+  oc exec -c "${ELASTIC_POD_CONTAINER}" ${ELASTIC_POD} -- bash -c "rm -f /tmp/mapping.json"
   for map in "${mappings[@]}"
   do
     ORG_IFS=${IFS}
@@ -1642,6 +1709,16 @@ get_bucket_suffix(){
   echo "${suffix}"
 }
 
+get_snapshot_repo_size() {
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version "${wd_version}" "5.2.0") -lt 0 ] ; then
+    echo "$(oc ${OC_ARGS} get elasticsearchcluster ${TENANT_NAME} -o jsonpath='{.spec.snapshotRepo.size}')"
+  else
+    opensearch_cluster=$(get_opensearch_cluster)
+    echo "$(oc ${OC_ARGS} get cluster.opensearch ${opensearch_cluster} -o jsonpath='{.spec.backup.sizeLimit}')"
+  fi 
+}
+
 create_elastic_shared_pvc(){
   local wd_version=${WD_VERSION:-$(get_version)}
   if [ $(compare_version "${wd_version}" "4.7.0") -ge 0 ] ; then
@@ -1667,7 +1744,7 @@ create_elastic_shared_pvc(){
         brlog "ERROR" "numfmt command is not available. Please install numfmt."
         exit 1
       fi
-      local snapshot_repo_size="$(oc ${OC_ARGS} get elasticsearchcluster ${TENANT_NAME} -o jsonpath='{.spec.snapshotRepo.size}')"
+      local snapshot_repo_size=$(get_snapshot_repo_size)
       local size_array=( $(echo "${snapshot_repo_size}" | awk 'match($0, /([[:digit:]]+)([[:alpha:]]+)/, array) {print array[1], array[2]}') )
       ELASTIC_SHARED_PVC_SIZE="$((size_array[0]*2))${size_array[1]}"
       ELASTIC_SHARED_PVC_DEFAULT_NAME="${TENANT_NAME}-discovery-backup-restore-pvc"
@@ -1685,6 +1762,15 @@ spec:
   storageClassName: ${FILE_STORAGE_CLASS}
 EOF
       ELASTIC_SHARED_PVC="${ELASTIC_SHARED_PVC_DEFAULT_NAME}"
+
+      if [ $(compare_version "${wd_version}" "5.2.0") -ge 0 ] ; then
+        # Need those label when using custom shared PVC for opensearch.
+        # https://pages.github.ibm.com/CloudPakOpenContent/ibm-opensearch-operator/api/crds/#clusterspecbackup
+        oc label pvc $ELASTIC_SHARED_PVC icpdsupport/empty-on-nd-backup=false
+        oc label pvc $ELASTIC_SHARED_PVC icpdsupport/ignore-on-nd-backup=false
+      fi 
+
+      brlog "DEBUG" "Created '$ELASTIC_SHARED_PVC' PVC for elasticsearch backup/restore."
     fi
   fi
 }
