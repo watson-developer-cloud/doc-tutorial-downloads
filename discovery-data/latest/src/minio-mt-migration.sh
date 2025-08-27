@@ -2,7 +2,8 @@
 set -euo pipefail
 
 TMP_WORK_DIR="/tmp/backup-restore-workspace"
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/lib/function.bash"
 
 show_help(){
 cat << EOS
@@ -66,8 +67,7 @@ export HOME="${TMP_WORK_DIR}"
 export MINIO_CONFIG_DIR="${TMP_WORK_DIR}/.mc"
 MC_OPTS=(--config-dir ${MINIO_CONFIG_DIR} --insecure)
 
-"${MC}" ${MC_OPTS[@]} --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
-
+mc_set_alias
 for LOCATION in "cnm${bucket_suffix}/mt" "common${bucket_suffix}/mt" "exported-documents${bucket_suffix}"; do
   FOLDERS=$( ("${MC}" ${MC_OPTS[@]} --quiet --json ls "wdminio/${LOCATION}/${source}" || echo '{}') | jq -r '.key|values')
   for FOLDER in ${FOLDERS[@]}; do

@@ -43,7 +43,10 @@ done
 brlog "INFO" "MinIO:"
 brlog "INFO" "Tenant name: $TENANT_NAME"
 
+WD_VERSION="$(get_version)"
 BACKUP_FILE=${BACKUP_FILE:-"minio_$(date "+%Y%m%d_%H%M%S").tar.gz"}
+brlog "DEBUG" "WD_VERSION: $WD_VERSION"
+brlog "DEBUG" "BACKUP_FILE: $BACKUP_FILE"
 
 MINIO_ARCHIVE_OPTION="${MINIO_ARCHIVE_OPTION-$DATASTORE_ARCHIVE_OPTION}"
 if [ -n "${MINIO_ARCHIVE_OPTION}" ] ; then
@@ -51,6 +54,7 @@ if [ -n "${MINIO_ARCHIVE_OPTION}" ] ; then
 else
   MINIO_TAR_OPTIONS=("")
 fi
+brlog "DEBUG" "MINIO_TAR_OPTIONS: ${MINIO_TAR_OPTIONS[@]}"
 VERIFY_ARCHIVE=${VERIFY_ARCHIVE:-true}
 VERIFY_DATASTORE_ARCHIVE=${VERIFY_DATASTORE_ARCHIVE:-$VERIFY_ARCHIVE}
 
@@ -60,6 +64,53 @@ rm -rf ${TMP_WORK_DIR}
 
 mkdir -p "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"
 mkdir -p "${BACKUP_RESTORE_LOG_DIR}"
+
+if [ $(compare_version "${WD_VERSION}" "5.2.1") -ge 0 ] ; then
+  brlog "DEBUG" "Using aws s3 cli for WD ${WD_VERSION}"
+
+  # Prepare s3 pod.
+  launch_s3_pod
+  brlog "DEBUG" "S3 pod: ${POD}"
+  BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
+  S3_BACKUP_DIR="s3_backup"
+  S3_BACKUP="${MINIO_BACKUP}" # For backword compatibility.
+  _oc_cp "${SCRIPT_DIR}/src" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/lib" ${POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/src/s3-backup-restore-in-pod.sh" "${POD}:${BACKUP_RESTORE_DIR_IN_POD}/s3-backup-restore-in-pod.sh" ${OC_ARGS}
+  
+  if [ "${COMMAND}" = "restore" ] ; then
+    brlog "INFO" "Transferring backup data ${BACKUP_FILE} into ${POD} ..."
+    kube_cp_from_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${S3_BACKUP_DIR}/${S3_BACKUP}" ${OC_ARGS}
+  fi
+
+  # Run the backup/restore script.
+  brlog "INFO" "Running backup restore script in s3 pod ..."
+  # TODO this takes a while without logging any message at stdout.
+  run_cmd_in_pod ${POD} \
+    "${BACKUP_RESTORE_DIR_IN_POD}/s3-backup-restore-in-pod.sh ${COMMAND} --log-level ${BACKUP_RESTORE_LOG_LEVEL} --backup-dir ${BACKUP_RESTORE_DIR_IN_POD}/${S3_BACKUP_DIR} --file ${S3_BACKUP}" \
+    ${OC_ARGS}
+  result=$(get_last_cmd_result_in_pod)
+  brlog "DEBUG" "s3 br script result: ${result}"
+  
+  if [ "${COMMAND}" = "backup" ] ; then
+    brlog "INFO" "Transferring backup data"
+    kube_cp_to_local ${POD} "${BACKUP_FILE}" "${BACKUP_RESTORE_DIR_IN_POD}/${S3_BACKUP_DIR}/${S3_BACKUP}" ${OC_ARGS}
+    if "${VERIFY_DATASTORE_ARCHIVE}" && brlog "INFO" "Verifying backup archive" && ! tar "${MINIO_TAR_OPTIONS[@]}" -tf ${BACKUP_FILE} &> /dev/null ; then
+      brlog "ERROR" "Backup file is broken, or does not exist."
+      exit 1
+    fi
+  fi
+
+  # Cleanup.
+  oc ${OC_ARGS} exec ${POD} -- bash -c "cd ${BACKUP_RESTORE_DIR_IN_POD}; ls | xargs rm -rf"
+  oc ${OC_ARGS} delete -f "${S3_JOB_FILE}"
+  rm -rf ${TMP_WORK_DIR}
+  if [ -z "$(ls tmp)" ] ; then
+    rm -rf tmp
+  fi
+  brlog "INFO" "Done"
+  exit 0
+fi 
 
 if "${BACKUP_RESTORE_IN_POD}" ; then
   BACKUP_RESTORE_DIR_IN_POD="/tmp/backup-restore-workspace"
@@ -128,9 +179,9 @@ if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
   start_minio_port_forward
-  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
-  if [ $(compare_version "$(get_version)" "4.7.0") -ge 0 ] ; then
+  if [ $(compare_version "${WD_VERSION}" "4.7.0") -ge 0 ] ; then
     EXCLUDE_OBJECTS+=$'\n'
     EXCLUDE_OBJECTS+="$(cat "${SCRIPT_DIR}/src/mcg_exclude_paths")"
   fi
@@ -192,7 +243,7 @@ if [ "${COMMAND}" = "restore" ] ; then
   tar "${MINIO_TAR_OPTIONS[@]}" -xf ${BACKUP_FILE} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   brlog "INFO" "Restoring data..."
   start_minio_port_forward
-  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   for bucket_path in "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"/*
   do
     bucket="$(basename "${bucket_path}")"
