@@ -51,7 +51,7 @@ S3_BUCKETS=${S3_BUCKETS:-}
 if [ "${COMMAND}" = "backup" ] ; then
   brlog "INFO" "Start backup minio"
   brlog "INFO" "Backup data..."
-  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   EXCLUDE_OBJECTS=$(cat "${SCRIPT_DIR}/src/minio_exclude_paths")
   if [ $(compare_version "$(get_version)" "4.7.0") -ge 0 ] ; then
     EXCLUDE_OBJECTS+=$'\n'
@@ -106,7 +106,7 @@ if [ "${COMMAND}" = "restore" ] ; then
   tar "${MINIO_TAR_OPTIONS[@]}" -xf ${MINIO_BACKUP} -C ${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}
   rm -f ${MINIO_BACKUP}
   brlog "INFO" "Restoring data..."
-  "${MC}" "${MC_OPTS[@]}" --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   for bucket_path in "${TMP_WORK_DIR}/${MINIO_BACKUP_DIR}"/*
   do
     bucket="$(basename "${bucket_path}")"

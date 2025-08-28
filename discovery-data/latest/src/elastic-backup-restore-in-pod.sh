@@ -67,7 +67,7 @@ function clean_up(){
 }
 
 if [ "${COMMAND}" = "backup" ] ; then
-  "${MC}" ${MC_OPTS[@]} config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   if [ -n "$("${MC}" ${MC_OPTS[@]} ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
     "${MC}" ${MC_OPTS[@]} rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi
@@ -130,7 +130,7 @@ elif [ "${COMMAND}" = "restore" ] ; then
   tar "${ELASTIC_TAR_OPTIONS[@]}" -xf ${ELASTIC_BACKUP} -C ${TMP_WORK_DIR}/${ELASTIC_BACKUP_DIR}/${ELASTIC_BACKUP_BUCKET}/${ELASTIC_SNAPSHOT_PATH}
   rm -f ${ELASTIC_BACKUP}
   brlog "INFO" "Transferring data to MinIO..."
-  "${MC}" "${MC_OPTS[@]}" config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  mc_set_alias
   if [ -n "$("${MC}" "${MC_OPTS[@]}" ls wdminio/${ELASTIC_BACKUP_BUCKET}/)" ] ; then
     "${MC}" "${MC_OPTS[@]}" rm --recursive --force --dangerous wdminio/${ELASTIC_BACKUP_BUCKET}/ > /dev/null
   fi

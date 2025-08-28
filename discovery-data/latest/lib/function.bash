@@ -251,6 +251,38 @@ gzip_to_plain_tar() {
   brlog "DEBUG" "Recompressed backup: ${recompressed_backup_info}"
 }
 
+# Create a compressed backup file at the specified directory.
+archive_backup() {
+  local file="$1"
+  local directory="$2"
+  shift 2
+  local opt=("$@")
+
+  brlog "INFO" "Archiving backup data as '${file}' in '${directory}' directory"
+
+  errlog=$(mktemp)
+  set +e
+  tar "${opt[@]}" -cf "${directory}/${file}" --exclude "${file}" -C "${directory}" . 2> "$errlog"
+  set -e
+  exitcode=$?
+  error_output=$(<"$errlog")
+  rm -f "$errlog"
+
+  if [ "$exitcode" -ne 0 ]; then
+    if echo "$error_output" | grep -qv "file changed as we read it"; then
+        brlog "ERROR" "tar command failed with unexpected error:"
+        brlog "ERROR" "$error_output"
+        exit $exitcode
+    fi
+  fi
+
+  # Log the backup file size.
+  ls -lth "${directory}/${file}"
+
+  brlog "INFO" "Archive completed successfully."
+}
+
+
 kube_cp_from_local(){
   IS_RECURSIVE=false
   if [ "$1" = "-r" ] ; then
@@ -263,10 +295,13 @@ kube_cp_from_local(){
   shift
   POD_BACKUP=$1
   shift
+
+  brlog "DEBUG" "kube_cp_from_local POD:${POD} LOCAL_BACKUP:${LOCAL_BACKUP} POD_BACKUP: ${POD_BACKUP}"
   SPLIT_DIR=./tmp_split_backup
   SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   LOCAL_BASE_NAME=$(basename "${LOCAL_BACKUP}")
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
+  oc exec $@ ${POD} -- bash -c "mkdir -p ${POD_DIST_DIR}"
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
@@ -322,6 +357,7 @@ kube_cp_to_local(){
   SPLIT_DIR=./tmp_split_backup
   SPLIT_SIZE=${BACKUP_RESTORE_SPLIT_SIZE:-500000000}
   POD_DIST_DIR=$(dirname "${POD_BACKUP}")
+  brlog "DEBUG" "kube_cp_to_local POD:${POD} LOCAL_BACKUP:${LOCAL_BACKUP} POD_BACKUP:${POD_BACKUP}"
 
   if "${IS_RECURSIVE}" ; then
     ORG_POD_BACKUP=${POD_BACKUP}
@@ -491,6 +527,14 @@ has_mc_mirror_retry() {
     echo "1"
   else
     echo "0"
+  fi
+}
+
+mc_set_alias() {
+  if "${MC}" alias --help &>/dev/null; then
+    "${MC}" ${MC_OPTS[@]} --quiet alias set wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
+  else
+    "${MC}" ${MC_OPTS[@]} --quiet config host add wdminio ${S3_ENDPOINT_URL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} > /dev/null
   fi
 }
 

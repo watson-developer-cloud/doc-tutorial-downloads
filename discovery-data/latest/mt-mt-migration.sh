@@ -225,12 +225,18 @@ do
   ##############
 
   brlog "INFO" "    Migrating MinIO contents"
-
   bucket_suffix="$(get_bucket_suffix)"
+  _oc_cp "${SCRIPT_DIR}/src" ${MC_POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/lib" ${MC_POD}:${BACKUP_RESTORE_DIR_IN_POD}/ ${OC_ARGS}
+  _oc_cp "${SCRIPT_DIR}/src/minio-mt-migration.sh" "${MC_POD}:${BACKUP_RESTORE_DIR_IN_POD}/minio-mt-migration.sh" ${OC_ARGS}
   if [ -n "${bucket_suffix}" ] ; then
-    run_script_in_pod ${MC_POD} "${SCRIPT_DIR}/src/minio-mt-migration.sh" "-s ${src} -t ${dst} --suffix ${bucket_suffix}"
+    run_cmd_in_pod ${MC_POD} \
+    "${BACKUP_RESTORE_DIR_IN_POD}/minio-mt-migration.sh -s ${src} -t ${dst} --suffix ${bucket_suffix}" \
+    ${OC_ARGS}
   else
-    run_script_in_pod ${MC_POD} "${SCRIPT_DIR}/src/minio-mt-migration.sh" "-s ${src} -t ${dst}"
+    run_cmd_in_pod ${MC_POD} \
+    "${BACKUP_RESTORE_DIR_IN_POD}/minio-mt-migration.sh -s ${src} -t ${dst}" \
+    ${OC_ARGS}
   fi
 
   ##############
