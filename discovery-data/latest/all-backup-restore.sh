@@ -42,8 +42,8 @@ Basically, you don't need these advanced options.
     --datastore-archive-option="<tar_option>"  Tar options for compression used on archiving the backup files of ElasticSearch, MinIO and internal configuration. Default "-z".
     --postgresql-archive-option="<tar_option>" Tar options for compression used on archiving the backup files of postgres. Note that the backup files of postgresql are archived on its pod by default. Default "-z".
     --etcd-archive-option="<tar_option>"       Tar options used on archiving the backup files of etcd. Note that the backup files of etcd are archived on its pod by default. Default "-z".
-    --reindex-old-index                        Reindex elastic search indices from version 6 to 7 before making the backup. If existing elastic search indices version is already 7, this flag does nothing. They have to be reindexed if you want to restore to 4.8.x. Reindex actually won't change your data, but it takes time. If you want to make the backup without reindex, use '--ignore-old-index' instead.
-    --ignore-old-index                         Whether to skip reindexing old (version 6) elastic search indices before making the backup. You can proceed backup without reindex, but you can't restore the backup data to 4.8.x.
+    --reindex-old-index                        Reindex old Elasticsearch indices before making a backup. If you want to restore into 4.8.6 and later, you'll need to reindex to elasticsearch7. If you want to restore into 5.3.0 and later, you'll need to reindex to opensearch2. Reindex actually won't change your data, but it takes time. If you want to make the backup without reindex, use '--ignore-old-index' instead.
+    --ignore-old-index                         Whether to skip reindexing old elastic search indices before making the backup.
     --skip-verify-archive                      Skip the all verifying process of the archive.
     --skip-verify-backup                       Skip verifying the backup file.
     --skip-verify-datastore-archive            Skip verifying the archive of datastores.
@@ -381,9 +381,9 @@ if ! "${BACKUP_RESTORE_IN_POD:-false}" ; then
 fi
 
 if [ ${COMMAND} = 'backup' ] ; then
-  if [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] ; then
-    ELASTIC_VERSION=$(get_elastic_version)
-    validate_elastic_version "${ELASTIC_VERSION}"
+  if [ $(compare_version "${WD_VERSION}" "5.3.0") -lt 0 ] ; then
+    ELASTIC_INDEX_VERSION=$(get_ELASTIC_INDEX_VERSION)
+    validate_ELASTIC_INDEX_VERSION "${ELASTIC_INDEX_VERSION}"
   fi 
   if [ $(compare_version "${WD_VERSION}" "4.0.6") -ge 0 ] ; then
     create_backup_instance_mappings
@@ -393,10 +393,24 @@ if [ ${COMMAND} = 'backup' ] ; then
       quiesce
     fi
   fi
-  if [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] ; then
-    if [[ ${ELASTIC_VERSION} = "ES6" ]] && [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
-      reindex_elastic_es6
-    fi 
+  # Reindex old indices if requested (only for versions before OpenSearch 2 / 5.3.0)
+  if [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
+    # Reindex ES6 -> ES7 (WD versions: 2.2.0 <= version < 5.2.0)
+    if [ $(compare_version "${WD_VERSION}" "2.2.0") -ge 0 ] && \
+       [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] && \
+       [[ ${ELASTIC_INDEX_VERSION} = "ES6" ]]; then
+      reindex_elastic "${ELASTIC_INDEX_VERSION}"
+      ELASTIC_INDEX_VERSION=$(get_ELASTIC_INDEX_VERSION)
+      validate_ELASTIC_INDEX_VERSION "${ELASTIC_INDEX_VERSION}"
+    fi
+    # Reindex ES7 -> OS2 (WD versions: 4.8.6 <= version < 5.3.0)
+    if [ $(compare_version "${WD_VERSION}" "4.8.6") -ge 0 ] && \
+       [ $(compare_version "${WD_VERSION}" "5.3.0") -lt 0 ] && \
+       [[ ${ELASTIC_INDEX_VERSION} = "ES7" ]]; then
+      reindex_elastic "${ELASTIC_INDEX_VERSION}"
+      ELASTIC_INDEX_VERSION=$(get_ELASTIC_INDEX_VERSION)
+      validate_ELASTIC_INDEX_VERSION "${ELASTIC_INDEX_VERSION}"
+    fi
   fi
 
   if [ $(compare_version "${WD_VERSION}" "2.1.3") -ge 0 ] ; then

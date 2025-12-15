@@ -54,6 +54,7 @@ mkdir -p ${BACKUP_RESTORE_LOG_DIR}
 wd_version=${WD_VERSION:-$(get_version)}
 
 setup_etcd_env
+ETCD_VARIABLES=$(export_etcd_variable_command)
 
 # backup etcd
 if [ ${COMMAND} = 'backup' ] ; then
@@ -61,11 +62,7 @@ if [ ${COMMAND} = 'backup' ] ; then
   brlog "INFO" "Start backup etcd..."
   run_cmd_in_pod ${ETCD_POD} "rm -rf ${ETCD_BACKUP_DIR} ${ETCD_BACKUP} && \
   mkdir -p ${ETCD_BACKUP_DIR} && \
-  export ETCDCTL_USER='${ETCD_USER}:${ETCD_PASSWORD}' && \
-  export ETCDCTL_CERT='/etc/etcdtls/operator/etcd-tls/etcd-client.crt' && \
-  export ETCDCTL_CACERT='/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt' && \
-  export ETCDCTL_KEY='/etc/etcdtls/operator/etcd-tls/etcd-client.key' && \
-  export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379' && \
+  ${ETCD_VARIABLES} && \
   etcdctl get --prefix '/' -w fields > ${ETCD_BACKUP_FILE}" ${OC_ARGS}
 
   if "${ARCHIVE_ON_LOCAL}" ; then 
@@ -116,11 +113,7 @@ if [ ${COMMAND} = 'restore' ] ; then
   fi
   brlog "INFO" "Restoring data..."
   cmd='export ETCDCTL_API=3 && \
-  export ETCDCTL_USER='${ETCD_USER}':'${ETCD_PASSWORD}' && \
-  export ETCDCTL_CERT=/etc/etcdtls/operator/etcd-tls/etcd-client.crt && \
-  export ETCDCTL_CACERT=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt && \
-  export ETCDCTL_KEY=/etc/etcdtls/operator/etcd-tls/etcd-client.key && \
-  export ETCDCTL_ENDPOINTS=https://'${ETCD_SERVICE}':2379 && \
+  '${ETCD_VARIABLES}' && \
   export ETCD_BACKUP='${ETCD_BACKUP_FILE}' && \
   etcdctl del --prefix "/" && \
   cat ${ETCD_BACKUP} | \

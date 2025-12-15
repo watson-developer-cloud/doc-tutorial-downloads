@@ -312,7 +312,7 @@ if [ $(compare_version ${WD_VERSION} "5.2.0") -ge 0 ]; then
   brlog "INFO" "Scale down opensearch operator"
   OPENSEARCH_CLUSTER=$(get_opensearch_cluster)
   OPENSEARCH_VERSION=$(oc ${OC_ARGS} get cluster.opensearch ${OPENSEARCH_CLUSTER} -o jsonpath='{.status.release}{"\n"}')
-  OPENSEARCH_OPERATOR_DEPLOY=( $(oc get deploy -A -l "olm.owner=ibm-opensearch-operator.v${OPENSEARCH_VERSION}" | tail -n1 | awk '{print $1,$2}') )
+  OPENSEARCH_OPERATOR_DEPLOY=( $(get_opensearch_operator_deployment) )
   oc ${OC_ARGS} scale deploy -n "${OPENSEARCH_OPERATOR_DEPLOY[0]}" "${OPENSEARCH_OPERATOR_DEPLOY[1]}" --replicas=0
   trap_add "oc ${OC_ARGS} scale deploy -n ${OPENSEARCH_OPERATOR_DEPLOY[0]} ${OPENSEARCH_OPERATOR_DEPLOY[1]} --replicas=1"
 fi
@@ -599,7 +599,8 @@ EOF
     run_cmd_in_pod ${ELASTIC_POD} "${restore_whitelist_indices_cmd}" ${OC_ARGS} -c "${ELASTIC_POD_CONTAINER}"
     result=$(get_last_cmd_result_in_pod)
     brlog "DEBUG" "restore whitelist indices result: ${result}"
-    if ! echo "${result}" | grep -Eq '"total":1,"failed":0,"successful":1'; then
+    # TODO handle multiple whitelist indicies case.
+    if ! echo "${result}" | grep -Eq '"total":1,"failed":0,"successful":1|"index_not_found_exception"'; then
       brlog "ERROR" "Could not restore the ${whitelist_indices} index due to the following error: ${result}. Please check the cluster."
       clean_up
       exit 1

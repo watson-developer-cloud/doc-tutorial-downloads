@@ -150,6 +150,20 @@ get_version(){
   fi
 }
 
+# Return 0 if wd is installed with helm (non-OLM method). Otherwise 1.
+is_managed_by_helm() {
+  if [ $(compare_version "${WD_VERSION}" "5.3.0") -lt 0 ] ; then
+    return 1
+  else
+    label=$(oc get wd ${OC_ARGS} ${TENANT_NAME} -o jsonpath="{.metadata.labels.app\.kubernetes\.io/managed-by}")
+    if [[ "$label" == "Helm" ]]; then
+      return 0  # Managed by Helm.
+    else
+      return 1  # Managed by Ansible.
+    fi
+  fi
+}
+
 # Return the major version, for instance if version is 4.x.y, return 4.
 major_version() {
   local version="$1"
@@ -715,6 +729,7 @@ get_migrator_tag(){
 
 get_migrator_image(){
   local wd_version=${WD_VERSION:-$(get_version)}
+  DISCOVERY_REGISTRY_NAMESPACE="cp/watson-discovery"
   if [ $(compare_version "${wd_version}" "4.6.0") -le 0 ] ; then
     echo "$(get_migrator_repo):${MIGRATOR_TAG:-$(get_migrator_tag)}"
   else
@@ -722,7 +737,11 @@ get_migrator_image(){
     utils_image="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.name}')"
     utils_tag="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.tag}')"
     utils_digest="$(oc get watsondiscoveryapi ${TENANT_NAME} -o jsonpath='{.spec.shared.initContainer.utils.image.digest}')"
-    echo "${utils_repo}/${utils_image}:${utils_tag}@${utils_digest}"
+    if [ $(compare_version "${wd_version}" "5.3.0") -lt 0 ] ; then
+      echo "${utils_repo}/${utils_image}:${utils_tag}@${utils_digest}"
+    else 
+      echo "${utils_repo}/${DISCOVERY_REGISTRY_NAMESPACE}/${utils_image}:${utils_tag}@${utils_digest}"
+    fi
   fi
 }
 
@@ -1320,45 +1339,79 @@ check_datastore_available(){
 }
 
 # Get elastic indices and return its version as a string. Return the oldest index version. 
-# Assume there are only version 6 or 7 indices in the cluster.
-get_elastic_version() {
+get_ELASTIC_INDEX_VERSION() {
   ELASTIC_POD=$(get_elastic_pod)
   ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "--dry-run" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es7_indices.sh" "--check-only" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
   result=$(get_last_cmd_result_in_pod)
 
   if echo "$result" | grep -q "Skip ElasticSearch 6 index"; then
     echo "ES6"
-  elif echo "$result" | grep -q "Skip ElasticSearch 7 index"; then
+  elif echo "$result" | grep -q "Detected ElasticSearch 7 index"; then
     echo "ES7"
-  elif echo "$result" | grep -q "ElasticSearch has no index"; then
+  elif echo "$result" | grep -q "Skip OpenSearch 2 index"; then
+    echo "OS2"
+  elif echo "$result" | grep -q "OpenSearch has no index"; then
     echo "NoIndex"
   else
     echo "Unknown"
   fi  
 }
 
-validate_elastic_version() {
-  ELASTIC_VERSION="${1:-$(get_elastic_version)}"
+validate_ELASTIC_INDEX_VERSION() {
+  local wd_version="${WD_VERSION:-$(get_version)}"
+  ELASTIC_INDEX_VERSION="${1:-$(get_ELASTIC_INDEX_VERSION)}"
 
-  if [[ ${ELASTIC_VERSION} = "ES6" ]]; then
+  if [[ ${ELASTIC_INDEX_VERSION} = "ES6" ]]; then
     brlog "WARN" "Elasticsearch 6 detected."
     if [[ ${IGNORE_OLD_INDEX} = "true" ]]; then
-      brlog "WARN" "Ignoring old index."
+      brlog "WARN" "Ignoring elasticsearch 6 index."
     elif [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
-      brlog "INFO" "Elasticsearch 6 will be reindexed after quiescing."
+      if [ $(compare_version "${WD_VERSION}" "2.2.0") -ge 0 ] && [ $(compare_version "${WD_VERSION}" "5.2.0") -lt 0 ] ; then
+        brlog "INFO" "Elasticsearch 6 will be reindexed after quiescing."
+      else
+        brlog "ERROR" "Detected old index created in ElasticSearch 6 that is not supported in Watson Discovery 4.8.x. They have to be reindexed into elasticsearch7 if you want to restore to 4.8.x or higher. Please reindex into elasticsearch7 using Watson Discovery verison less than 5.2.2. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
+        exit 1
+      fi
     else
       brlog "ERROR" "Detected old index created in ElasticSearch 6 that is not supported in Watson Discovery 4.8.x. They have to be reindexed if you want to restore to 4.8.x or higher. Reindex actually won't change your data, but it takes time. Run the backup script with '--reindex-old-index' option if you want to reindex them. You can proceed the backup without reindex, but you can't restore the backup data to 4.8.x. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
       exit 1
     fi
   fi 
+
+  if [[ ${ELASTIC_INDEX_VERSION} = "ES7" ]]; then
+    brlog "WARN" "Elasticsearch 7 detected."
+    if [[ ${IGNORE_OLD_INDEX} = "true" ]]; then
+      brlog "WARN" "Ignoring elasticsearch 7 index."
+    elif [[ ${REINDEX_OLD_INDEX} = "true" ]]; then
+      if [ $(compare_version "${WD_VERSION}" "4.8.6") -ge 0 ] && [ $(compare_version "${WD_VERSION}" "5.3.0") -lt 0 ] ; then
+        brlog "INFO" "Elasticsearch 7 will be reindexed after quiescing."
+      else 
+        brlog "ERROR" "Detected old index created in ElasticSearch 7 that is not supported in Watson Discovery 5.3.x. They have to be reindexed into opensearch2 if you want to restore to 5.3.x or higher. Please reindex into opensearch2 using Watson Discovery versions between 4.8.6 and below 5.3.0. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
+        exit 1
+      fi 
+    else
+      brlog "ERROR" "Detected old index created in ElasticSearch 7 that is not supported in Watson Discovery 5.3.x. They have to be reindexed if you want to restore to 5.3.x or higher. Reindex actually won't change your data, but it takes time. Run the backup script with '--reindex-old-index' option if you want to reindex them. You can proceed the backup without reindex, but you can't restore the backup data to 5.3.x. If you would like to ignore the error, run backup script with '--ignore-old-index' option."
+      exit 1
+    fi
+  fi 
 }
 
-# Reindex elastic search indices from version 6 to 7.
-reindex_elastic_es6() {
+reindex_elastic() {
+  local reindex_source_version=$1
   brlog "INFO" "Reindexing ..."
   ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
-  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/reindex_es6_indices.sh" "" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
+  reindex_script=""
+  if [[ ${reindex_source_version} = "ES6" ]]; then
+    reindex_script="reindex_es6_indices.sh"
+  elif [[ ${reindex_source_version} = "ES7" ]]; then
+    reindex_script="reindex_es7_indices.sh"
+  else
+    brlog "ERROR" "Unsupported reindex source version: ${reindex_source_version}"
+    exit 1
+  fi
+
+  run_script_in_pod ${ELASTIC_POD} "${SCRIPT_DIR}/${reindex_script}" "" -c "${ELASTIC_POD_CONTAINER}" ${OC_ARGS}
   brlog "INFO" "Reindex completed. Waiting for ElasticSearch status to be green ..."
   # Wait a few moments for elastic search to be ready after the reindex.
   # TODO: implement waiting logic inside of reindex_es6_indices.sh, and remove the sleep below from this function.
@@ -1366,16 +1419,44 @@ reindex_elastic_es6() {
   check_elastic_available || { brlog "ERROR" "ElasticSearch is unavailable"; exit 1; }
 }
 
+get_etcd_pod(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.3.0") -lt 0 ] ; then
+    echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)"
+  else 
+    echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l icpdsupport/podSelector=discovery-etcd)"
+  fi
+}
+
+export_etcd_variable_command(){
+  local wd_version=${WD_VERSION:-$(get_version)}
+  setup_etcd_env
+  if [ $(compare_version ${wd_version} "5.3.0") -lt 0 ] ; then
+    echo "export ETCDCTL_USER='${ETCD_USER}:${ETCD_PASSWORD}' && \
+      export ETCDCTL_CERT='/etc/etcdtls/operator/etcd-tls/etcd-client.crt' && \
+      export ETCDCTL_CACERT='/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt' && \
+      export ETCDCTL_KEY='/etc/etcdtls/operator/etcd-tls/etcd-client.key' && \
+      export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379'"
+  else
+    # In WD 5.3.0+, certificate environment variables are already set in the etcd StatefulSet.
+    echo "export ETCDCTL_USER='${ETCD_USER}:${ETCD_PASSWORD}' && \
+      export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379'"
+  fi
+}
 
 check_etcd_available(){
+  local wd_version=${WD_VERSION:-$(get_version)}
   setup_etcd_env
-  ETCD_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)
-  oc exec ${OC_ARGS} "${ETCD_POD}" -- bash -c "export ETCDCTL_USER='${ETCD_USER}:${ETCD_PASSWORD}' && \
-  export ETCDCTL_CERT='/etc/etcdtls/operator/etcd-tls/etcd-client.crt' && \
-  export ETCDCTL_CACERT='/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt' && \
-  export ETCDCTL_KEY='/etc/etcdtls/operator/etcd-tls/etcd-client.key' && \
-  export ETCDCTL_ENDPOINTS='https://${ETCD_SERVICE}:2379' && \
-  etcdctl endpoint health > /dev/null" || return 1
+  ETCD_POD=$(get_etcd_pod)
+  ETCD_VARIABLES=$(export_etcd_variable_command)
+  if [ $(compare_version ${wd_version} "5.3.0") -lt 0 ] ; then
+    oc exec ${OC_ARGS} "${ETCD_POD}" -- bash -c "${ETCD_VARIABLES} && \
+    etcdctl endpoint health > /dev/null" || return 1
+  else 
+    oc exec ${OC_ARGS} "${ETCD_POD}" -- bash -c "${ETCD_VARIABLES} && \
+    etcdctl endpoint health" || return 1
+  fi 
+  
   return 0
 }
 
@@ -1385,7 +1466,7 @@ setup_etcd_env(){
   ETCD_SECRET=$(oc get secret ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l "tenant=${TENANT_NAME},app in (etcd,etcd-root)")
   ETCD_USER=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.username}}' | base64 --decode)
   ETCD_PASSWORD=$(oc get secret ${OC_ARGS} ${ETCD_SECRET} --template '{{.data.password}}' | base64 --decode)
-  ETCD_POD=$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l etcd_cluster=${TENANT_NAME}-discovery-etcd)
+  ETCD_POD=$(get_etcd_pod)
 }
 
 setup_pg_env(){
@@ -1449,6 +1530,15 @@ get_elastic_repo_location() {
 
 get_opensearch_cluster() {
   echo "$(oc get cluster.opensearch ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l tenant=${TENANT_NAME},app=opensearch)"
+}
+
+get_opensearch_operator_deployment() {
+  local wd_version=${WD_VERSION:-$(get_version)}
+  if [ $(compare_version ${wd_version} "5.3.0") -ge 0 ] && is_managed_by_helm; then
+    echo "$(oc get deploy -A -l icpdsupport/addOnId=opencontent-opensearch | tail -n1 | awk '{print $1,$2}')"
+  else
+    echo "$(oc get deploy -A -l "olm.owner=ibm-opensearch-operator.v${OPENSEARCH_VERSION}" | tail -n1 | awk '{print $1,$2}')"
+  fi
 }
 
 check_elastic_available(){
