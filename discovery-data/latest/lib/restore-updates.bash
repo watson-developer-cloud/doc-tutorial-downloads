@@ -6,6 +6,7 @@ UPDATE_DIR="$SCRIPT_DIR/src"
 source "${SCRIPT_DIR}/lib/function.bash"
 
 ELASTIC_POD_CONTAINER=$(get_elastic_pod_container)
+ETCD_VARIABLES=$(export_etcd_variable_command)
 
 elastic_updates(){
   if ls "$UPDATE_DIR"/*.elupdate &> /dev/null ; then
@@ -31,11 +32,7 @@ etcd_updates(){
     for ETCD_COMMAND in "$UPDATE_DIR"/*.etcdupdate; do
       value=$(<${ETCD_COMMAND})
       oc ${OC_ARGS} exec ${ETCD_POD} -- sh -c "export ETCDCTL_API=3 && \
-        export ETCDCTL_USER=${ETCD_USER}:${ETCD_PASSWORD} && \
-        export ETCDCTL_CERT=/etc/etcdtls/operator/etcd-tls/etcd-client.crt && \
-        export ETCDCTL_CACERT=/etc/etcdtls/operator/etcd-tls/etcd-client-ca.crt && \
-        export ETCDCTL_KEY=/etc/etcdtls/operator/etcd-tls/etcd-client.key && \
-        export ETCDCTL_ENDPOINTS=https://${ETCD_SERVICE}:2379 && \
+        ${ETCD_VARIABLES} && \
         ${value}" >> "${BACKUP_RESTORE_LOG_DIR}/${CURRENT_COMPONENT}.log"
     done
   fi
