@@ -442,17 +442,22 @@ fetch_cmd_result(){
   local fail_count=0
   while true ;
   do
-    local cmd_result=$(oc exec $@ ${pod} --  sh -c "${cmd}")
-    if [ -z "${cmd_result}" ] ; then
-      brlog "WARN" "Failed to get command result. Failure count: ${fail_count}" >&2
+    local cmd_result=$(oc exec $@ ${pod} --  sh -c "${cmd}" 2>&1)
+    local exit_code=$?
+    
+    # Check if oc exec command itself failed (not empty output)
+    if [ ${exit_code} -ne 0 ] ; then
+      brlog "WARN" "Failed to execute command in pod. Exit code: ${exit_code}. Failure count: ${fail_count}" >&2
       fail_count=$((fail_count += 1))
       if [ ${fail_count} -gt ${MAX_CMD_FAILURE_COUNT} ] ; then
-        brlog "ERROR" "Can not get command result over ${MAX_CMD_FAILURE_COUNT} times." >&2
+        brlog "ERROR" "Can not execute command over ${MAX_CMD_FAILURE_COUNT} times." >&2
         exit 1
       fi
       sleep ${MONITOR_CMD_INTERVAL}
       continue
     fi
+    
+    # Command executed successfully, return result (even if empty)
     echo "${cmd_result}"
     break
   done
@@ -1580,6 +1585,13 @@ get_zen_access_pod() {
   echo "$(oc get pods ${OC_ARGS} -o jsonpath="{.items[0].metadata.name}" -l app.kubernetes.io/component=wd-backup-restore)"
 }
 
+get_cp4d_user_token() {
+  local cp4d_route=$(oc ${OC_ARGS} get route cpd -o jsonpath='{.spec.host}' 2>/dev/null)
+  local token=$(curl -ks "https://${cp4d_route}/v1/preauth/validateAuth" \
+    -u "${CP4D_USERNAME}:${CP4D_PASSWORD}" | jq -r '.accessToken' 2>/dev/null)
+  echo "${token}"
+}
+
 create_backup_instance_mappings(){
   brlog "INFO" "Creating instance mapping file"
   launch_utils_job "wd-backup-restore-util-job"
@@ -1589,7 +1601,15 @@ create_backup_instance_mappings(){
   local wd_version="${WD_VERSION:-$(get_version)}"
   setup_zen_core_service_connection
   ZEN_ACCESS_POD=$(get_zen_access_pod)
-  token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  if [ -n "${CP4D_USERNAME}" ] && [ -n "${CP4D_PASSWORD}" ]; then
+    token=$(get_cp4d_user_token)
+  else
+    token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  fi
+  if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+    brlog "ERROR" "Failed to get auth token for core API server"
+    exit 1
+  fi
   if [ $(compare_version ${wd_version} "4.0.9") -le 0 ] ; then
     mappings=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v2/serviceInstance' -H 'Authorization: Bearer ${token}' | jq -r '.requestObj[] | select(.ServiceInstanceType == \"discovery\" and .ProvisionStatus == \"PROVISIONED\") | { \"display_name\": .ServiceInstanceDisplayName, \"source_instance_id\": .CreateArguments.metadata.instanceId, \"dest_instance_id\": \"<new_instance_id>\"}' | jq -s '{\"instance_mappings\": .}'")
   else
@@ -1612,7 +1632,15 @@ create_restore_instance_mappings(){
   setup_zen_core_service_connection
   ZEN_ACCESS_POD=$(get_zen_access_pod)
   _oc_cp "${MAPPING_FILE}" "${ZEN_ACCESS_POD}:/tmp/mapping.json"
-  local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  if [ -n "${CP4D_USERNAME}" ] && [ -n "${CP4D_PASSWORD}" ]; then
+    local token=$(get_cp4d_user_token)
+  else
+    local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  fi
+  if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+    brlog "ERROR" "Failed to get auth token for core API server"
+    return 1
+  fi
   local service_instances=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true&addon_type=discovery' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'")
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     brlog "INFO" "Discovery instances exist. Check if they are same instance."
@@ -1671,7 +1699,15 @@ check_instance_mappings(){
   ZEN_ACCESS_POD=$(get_zen_access_pod)
   local file_name="$(basename "${MAPPING_FILE}")"
   _oc_cp "${MAPPING_FILE}" "${ZEN_ACCESS_POD}:/tmp/mapping.json"
-  local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  if [ -n "${CP4D_USERNAME}" ] && [ -n "${CP4D_PASSWORD}" ]; then
+    local token=$(get_cp4d_user_token)
+  else
+    local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  fi
+  if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+    brlog "ERROR" "Failed to get auth token for core API server"
+    return 1
+  fi
   local service_instances=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true&addon_type=discovery' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'")
   local dest_instances=$(fetch_cmd_result ${ZEN_ACCESS_POD} "jq -r '.instance_mappings[].dest_instance_id' /tmp/mapping.json")
   for instance in ${dest_instances}
@@ -1716,7 +1752,15 @@ require_tenant_backup(){
 check_instance_exists(){
   setup_zen_core_service_connection
   ZEN_ACCESS_POD=$(get_zen_access_pod)
-  local token="$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")"
+  if [ -n "${CP4D_USERNAME}" ] && [ -n "${CP4D_PASSWORD}" ]; then
+    local token=$(get_cp4d_user_token)
+  else
+    local token="$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?expiration_time=1000' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")"
+  fi
+  if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+    brlog "ERROR" "Failed to get auth token for core API server"
+    return 1
+  fi
   local service_instances=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/v3/service_instances?fetch_all_instances=true&addon_type=discovery' -H 'Authorization: Bearer ${token}' | jq -r '${service_instance_query}'")
   if [ -n "${service_instances}" ] && [ "${service_instances}" != "null" ] ; then
     return 0
@@ -1755,7 +1799,15 @@ create_service_instance(){
     ZEN_UID="$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/openapi/v1/users/${ZEN_USER_NAME}' -H 'Authorization: Bearer ${token}' | jq -r '.UserInfo.uid'")"
   fi
   brlog "INFO" "Creating Discovery instance as ${ZEN_USER_NAME}:${ZEN_UID}" >&2
-  local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_UID}&username=${ZEN_USER_NAME}&display_name=${ZEN_USER_NAME}' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  if [ -n "${CP4D_USERNAME}" ] && [ -n "${CP4D_PASSWORD}" ]; then
+    local token=$(get_cp4d_user_token)
+  else
+    local token=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks '${ZEN_CORE_API_ENDPOINT}/internal/v1/service_token?uid=${ZEN_UID}&username=${ZEN_USER_NAME}&display_name=${ZEN_USER_NAME}' -H 'secret: ${ZEN_CORE_TOKEN}' -H 'cache-control: no-cache' | jq -r .token")
+  fi
+  if [ -z "${token}" ] || [ "${token}" = "null" ]; then
+    brlog "ERROR" "Failed to get auth token for core API server"
+    return 1
+  fi
   local instance_id=$(fetch_cmd_result ${ZEN_ACCESS_POD} "curl -ks -X POST '${WATSON_GATEWAY_ENDPOINT}/api/ibmcloud/resource-controller/resource_instances' -H 'Authorization: Bearer ${token}' -H 'Content-Type: application/json' -d@/tmp/request.json | jq -r 'if .zen_id == null or .zen_id == \"\" then \"null\" else .zen_id end'")
   if [ "${instance_id}" != "null" ] ; then
     echo "${instance_id}"
